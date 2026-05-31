@@ -1,0 +1,4 @@
+{:paths ["src"]
+ :tasks
+ {convert {:doc "Convert images to laser-printer-optimized B&W"
+           :task (apply clojure.main/main "-m" "imglaserprintopt.core" *command-line-args*)}}}

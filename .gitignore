@@ -1,0 +1,23 @@
+.nrepl-port
+.cpcache/
+.babashka/
+*.class
+target/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI
+CLAUDE.md
+
+# Output
+bw.png
+bw-*.png
+bw-output/
