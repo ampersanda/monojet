@@ -34,13 +34,17 @@
     :default false]
    [nil "--invert" "Force invert"
     :default false]
+   ["-D" "--density DPI" "Rasterization DPI for PDF input"
+    :default 150
+    :parse-fn parse-long
+    :validate [#(<= 30 % 600) "Density must be 30-600 DPI"]]
    ["-v" "--verbose" "Print progress info"
     :default false]
    ["-V" "--version" "Show version"]
    ["-h" "--help" "Show help"]])
 
 (def image-extensions
-  #{"png" "jpg" "jpeg" "bmp" "tiff" "tif" "webp" "gif"})
+  #{"png" "jpg" "jpeg" "bmp" "tiff" "tif" "webp" "gif" "pdf"})
 
 (defn- image-file?
   [path]
@@ -134,7 +138,9 @@
 
 (defn- process-one!
   [in out opts verbose?]
-  (let [pre-mean   (im/mean-luminance in)
+  (let [density    (:density opts)
+        info       (im/identify in :density density)
+        pre-mean   (im/mean-luminance in :density density)
         force?     (:invert opts)
         auto?      (:auto-invert opts)
         invert?    (or force? (and auto? (< pre-mean 0.5)))
@@ -143,22 +149,25 @@
                     :toner-saving (:toner-saving opts)
                     :brightness   (:brightness opts)
                     :contrast     (:contrast opts)
-                    :invert?      invert?}]
+                    :invert?      invert?
+                    :density      density}]
     (when verbose?
       (println (str "  source mean luminance: " (format "%.2f" pre-mean)
+                    (when (> (:pages info) 1)
+                      (str "  pages: " (:pages info)))
                     (cond
                       force? "  invert: forced"
                       invert? "  invert: auto (dark background)"
                       :else  ""))))
     (im/convert! in out cvt-opts)
-    (let [cov-out (im/coverage out)
+    (let [cov-out (- 1.0 (im/mean-luminance out :density density))
           cov-in  (- 1.0 pre-mean)
-          ;; Approximate savings as drop in ink coverage.
           savings (max 0.0 (- cov-in cov-out))
           in-sz   (fs/size in)
           out-sz  (fs/size out)]
       {:input       in
        :output      out
+       :pages       (:pages info)
        :coverage    cov-out
        :savings     savings
        :input-size  in-sz

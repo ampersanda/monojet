@@ -1,8 +1,8 @@
 # imglaserprintopt
 
-CLI tool to convert images to black-and-white optimized for **cheap laserjet printing**. Built with [Babashka](https://babashka.org/) (Clojure) and [ImageMagick](https://imagemagick.org/).
+CLI tool to convert images (and PDFs) to black-and-white optimized for **cheap laserjet printing**. Built with [Babashka](https://babashka.org/) (Clojure) and [ImageMagick](https://imagemagick.org/).
 
-Unlike a generic grayscale conversion, this tool is aimed at minimizing toner usage: it lightens midtones with gamma correction, optionally inverts dark backgrounds (so a black page becomes a white page), and picks a B&W rendering that matches the content type — local adaptive threshold for text, error-diffusion or halftone for photos. Each run prints a coverage report so you can see roughly how much toner you'll save.
+Unlike a generic grayscale conversion, this tool is aimed at minimizing toner usage: it lightens midtones with gamma correction, optionally inverts dark backgrounds (so a black page becomes a white page), and picks a B&W rendering that matches the content type — local adaptive threshold for text, error-diffusion or halftone for photos. Multi-page PDFs are supported in and out. Each run prints a coverage report so you can see roughly how much toner you'll save.
 
 ## Install
 
@@ -18,9 +18,10 @@ The following must be installed **before** running the install script:
 
 - [Babashka](https://github.com/babashka/babashka) (bb)
 - [ImageMagick](https://imagemagick.org/) (magick)
+- [Ghostscript](https://www.ghostscript.com/) (gs) — required only if you want to convert PDFs
 
 ```bash
-brew install borkdude/brew/babashka imagemagick
+brew install borkdude/brew/babashka imagemagick ghostscript
 ```
 
 The script installs `imglaserprintopt` to `~/.local/bin`. Make sure it is in your `PATH`:
@@ -62,6 +63,12 @@ imglaserprintopt -i terminal.png -o terminal-bw.png
 
 # Verbose output (per-image stats)
 imglaserprintopt -v -d screenshots/ -o output/
+
+# PDF in -> B&W PDF out (multi-page preserved)
+imglaserprintopt zine.pdf -m text -o zine-bw.pdf
+
+# Higher DPI rasterization for sharper PDF output
+imglaserprintopt zine.pdf -m text -D 300 -o zine-bw.pdf
 ```
 
 Or run directly with Babashka:
@@ -85,6 +92,7 @@ bb -m imglaserprintopt.core image.png -o out.png
 | `-c, --contrast` | Contrast adjustment (-100..100) | 0 |
 | `-i, --auto-invert` | Invert if dark background detected | off |
 | `--invert` | Force invert | off |
+| `-D, --density` | Rasterization DPI for PDF input (30-600) | 150 |
 | `-v, --verbose` | Print progress info | |
 | `-V, --version` | Show version | |
 | `-h, --help` | Show help | |
@@ -110,6 +118,12 @@ bb -m imglaserprintopt.core image.png -o out.png
 5. Re-measures luminance of the output to estimate ink coverage and report toner savings vs. the original.
 
 A typical UI screenshot drops from ~40% ink coverage to ~5–10% after `text` mode with `-T 2`.
+
+## PDF support
+
+Both input and output PDFs are handled when Ghostscript is available. Multi-page input PDFs are rasterized page-by-page at `-D` DPI (default 150). If your output extension is `.pdf`, all pages are written into a single multi-page B&W PDF. The `text` mode's local-window size scales with `-D` so titles in large fonts don't render as outlines at higher DPI.
+
+For text-heavy documents start with `-m text -T 1`. For zines or comics with photos, `-m halftone -T 2` keeps photos legible while staying toner-cheap.
 
 ## Project structure
 

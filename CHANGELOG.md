@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- PDF input and output (multi-page) via Ghostscript delegate
+- `-D, --density` flag for PDF rasterization DPI (default 150)
+- LAT window in `text` mode scales with `-D` so large titles render solid at high DPI
+
 ## [0.1.0] - 2026-05-31
 
 ### Added
