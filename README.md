@@ -95,9 +95,11 @@ bb -m imglaserprintopt.core image.png -o out.png
 |---|---|---|
 | `text` | Documents, screenshots, code | ImageMagick `-lat 20x20` local adaptive threshold; keeps text crisp on uneven backgrounds |
 | `threshold` | High-contrast B&W source | Hard global threshold; smallest output, no midtones |
-| `dither` | Photos | Floyd-Steinberg error diffusion (`-monochrome`); fine detail, smooth gradients |
-| `halftone` | Photos for newspaper-like look | Ordered dither (`h6x6`); regular dot pattern |
+| `dither` | Photos | Floyd-Steinberg error diffusion (`-colors 2`); fine detail, smooth gradients |
+| `halftone` | Photos for newspaper-like look | Ordered dither (`h6x6o`); regular dot pattern |
 | `gray` | Charts/diagrams | Lightened grayscale (no B&W conversion); use when toner-saving alone is enough |
+
+> **Avoid `threshold` mode on images with large solid color regions** (e.g. ID cards with a coloured photo background, brand banners). A flat mid-tone block will collapse to solid black, which is the opposite of toner saving. Use `dither` or `halftone` instead — both reproduce solid colours as sparse dot patterns.
 
 ## How it works
 
