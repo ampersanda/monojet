@@ -22,12 +22,12 @@ jobs:
 
       - name: Prepare binary
         run: |
-          bb uberscript imglaserprintopt imglaserprintopt.bb
-          sed -i '1i#!/usr/bin/env bb' imglaserprintopt
-          chmod +x imglaserprintopt
+          bb uberscript monojet monojet.bb
+          sed -i '1i#!/usr/bin/env bb' monojet
+          chmod +x monojet
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: imglaserprintopt
+          files: monojet
           generate_release_notes: true

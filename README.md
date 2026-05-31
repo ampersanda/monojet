@@ -1,4 +1,4 @@
-# imglaserprintopt
+# monojet
 
 CLI tool to convert images (and PDFs) to black-and-white optimized for **cheap laserjet printing**. Built with [Babashka](https://babashka.org/) (Clojure) and [ImageMagick](https://imagemagick.org/).
 
@@ -9,7 +9,7 @@ Unlike a generic grayscale conversion, this tool is aimed at minimizing toner us
 The install script checks that all requirements are present before downloading.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ampersanda/image-laser-print/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ampersanda/monojet/main/install.sh | bash
 ```
 
 ### Requirements
@@ -24,7 +24,7 @@ The following must be installed **before** running the install script:
 brew install borkdude/brew/babashka imagemagick ghostscript
 ```
 
-The script installs `imglaserprintopt` to `~/.local/bin`. Make sure it is in your `PATH`:
+The script installs `monojet` to `~/.local/bin`. Make sure it is in your `PATH`:
 
 ```bash
 export PATH="${HOME}/.local/bin:${PATH}"
@@ -35,13 +35,13 @@ export PATH="${HOME}/.local/bin:${PATH}"
 Re-run the install command. It detects existing installs and updates in place:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ampersanda/image-laser-print/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ampersanda/monojet/main/install.sh | bash
 ```
 
 ### Uninstall
 
 ```bash
-rm ~/.local/bin/imglaserprintopt
+rm ~/.local/bin/monojet
 ```
 
 ## Usage
@@ -50,25 +50,25 @@ If installed via the install script:
 
 ```bash
 # Convert a single image (default mode: text)
-imglaserprintopt screenshot.png -o printable.png
+monojet screenshot.png -o printable.png
 
 # Convert all images in a directory; outputs go to ./bw-output/
-imglaserprintopt -d screenshots/
+monojet -d screenshots/
 
 # Photo-friendly Floyd-Steinberg dithering, with aggressive toner saving
-imglaserprintopt photo.jpg -m dither -T 3 -o photo-bw.png
+monojet photo.jpg -m dither -T 3 -o photo-bw.png
 
 # Auto-invert if the background is dark (e.g. dark-mode terminal screenshots)
-imglaserprintopt -i terminal.png -o terminal-bw.png
+monojet -i terminal.png -o terminal-bw.png
 
 # Verbose output (per-image stats)
-imglaserprintopt -v -d screenshots/ -o output/
+monojet -v -d screenshots/ -o output/
 
 # PDF in -> B&W PDF out (multi-page preserved)
-imglaserprintopt zine.pdf -m text -o zine-bw.pdf
+monojet zine.pdf -m text -o zine-bw.pdf
 
 # Higher DPI rasterization for sharper PDF output
-imglaserprintopt zine.pdf -m text -D 300 -o zine-bw.pdf
+monojet zine.pdf -m text -D 300 -o zine-bw.pdf
 ```
 
 Or run directly with Babashka:
@@ -76,7 +76,7 @@ Or run directly with Babashka:
 ```bash
 bb convert -- image.png -o out.png
 bb convert -- -d screenshots/ -o output/
-bb -m imglaserprintopt.core image.png -o out.png
+bb -m monojet.core image.png -o out.png
 ```
 
 ## Options
@@ -129,8 +129,8 @@ For text-heavy documents start with `-m text -T 1`. For zines or comics with pho
 
 ```
 bb.edn                            # Project config (no external deps)
-imglaserprintopt.bb               # Entry point for uberscript bundling
-src/imglaserprintopt/
+monojet.bb               # Entry point for uberscript bundling
+src/monojet/
   core.clj                        # CLI parsing, orchestration, reporting
   imagemagick.clj                 # ImageMagick interop (identify, analyze, convert)
 ```

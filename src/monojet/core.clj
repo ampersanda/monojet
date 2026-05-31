@@ -1,8 +1,8 @@
-(ns imglaserprintopt.core
+(ns monojet.core
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
-            [imglaserprintopt.imagemagick :as im]))
+            [monojet.imagemagick :as im]))
 
 (def version "0.1.0")
 
@@ -121,7 +121,7 @@
 
 (defn- print-usage
   [summary]
-  (println "imglaserprintopt - Convert images to laser-printer-optimized B&W")
+  (println "monojet - Convert images to laser-printer-optimized B&W")
   (println)
   (println "Usage: bb convert [options] image1 [image2 ...]")
   (println "       bb convert [options] -d <directory>")
@@ -202,7 +202,7 @@
         (doseq [e errors] (println e)))
       (System/exit 1))
     (when (:version options)
-      (println (str "imglaserprintopt " version))
+      (println (str "monojet " version))
       (System/exit 0))
     (when (:help options)
       (print-usage (:summary parsed))

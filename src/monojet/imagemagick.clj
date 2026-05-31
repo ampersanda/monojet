@@ -1,4 +1,4 @@
-(ns imglaserprintopt.imagemagick
+(ns monojet.imagemagick
   (:require [babashka.process :as p]
             [clojure.string :as str]))
 

@@ -12,7 +12,7 @@
 
 ### Added
 
-- Initial imglaserprintopt CLI implementation
+- Initial monojet CLI implementation (originally imglaserprintopt)
 - Modes: `text` (adaptive threshold), `threshold`, `dither` (Floyd-Steinberg), `halftone` (ordered dither), `gray`
 - Toner-saving gamma lightening (`-T` 0..3)
 - Auto-invert for dark-background images (`-i`)

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="ampersanda/image-laser-print"
+REPO="ampersanda/monojet"
 INSTALL_DIR="${HOME}/.local/bin"
-BIN_NAME="imglaserprintopt"
+BIN_NAME="monojet"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 
 info()  { printf '\033[1;34m=>\033[0m %s\n' "$1"; }
