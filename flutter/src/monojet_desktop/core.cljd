@@ -319,14 +319,18 @@
               (m/Text (if advanced-open? "Hide advanced options" "Show advanced options")
                       .style f95.Flutter95/textStyle)])))
 
+(defn- pdf-input? [path]
+  (and path (-> path .toLowerCase (.endsWith ".pdf"))))
+
 (defn- config-panel [state]
   (f/widget
     :managed [*advanced (atom false) :dispose nil :refresh-on :never]
     :watch [advanced-open? *advanced]
-    :let [{:keys [config]} @state
+    :let [{:keys [config input-path]} @state
           update-cfg! (fn [k v]
                         (swap! state assoc-in [:config k] v)
-                        (schedule-convert! state 400))]
+                        (schedule-convert! state 400))
+          pdf?       (pdf-input? input-path)]
     (m/Container
       .padding (m.EdgeInsets/all 8.0)
       .color f95.Flutter95/background
@@ -363,9 +367,12 @@
                (form/slider-field "Contrast" (:contrast config) -100 100 0
                                   #(update-cfg! :contrast %))
                field-gap
-               (form/slider-field "PDF DPI" (:density config) 30 600 150
-                                  #(update-cfg! :density %))
-               field-gap
+               (if pdf?
+                 (m/Padding
+                   .padding (m.EdgeInsets/only .bottom 10.0)
+                   .child (form/slider-field "PDF DPI" (:density config) 30 600 150
+                                             #(update-cfg! :density %)))
+                 (m.SizedBox/shrink))
                (form/checkbox-row "auto-invert" (:auto-invert? config)
                              #(update-cfg! :auto-invert? (boolean %)))
                (form/checkbox-row "force invert" (:invert? config)
