@@ -59,7 +59,7 @@ jobs:
 
       - name: Compile ClojureDart sources
         working-directory: flutter
-        run: clj -M:cljd compile
+        run: clojure -M:cljd compile
 
       - name: Build macOS app
         working-directory: flutter
