@@ -7,6 +7,8 @@ target/
 # Editor
 .idea/
 .vscode/
+.clj-kondo/
+.lsp/
 *.swp
 *~
 

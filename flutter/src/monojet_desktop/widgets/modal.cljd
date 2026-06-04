@@ -1,0 +1,70 @@
+(ns monojet-desktop.widgets.modal
+  "Reusable modal-card overlay: dim backdrop, centered Win95 panel, action row."
+  (:require ["package:flutter/material.dart" :as m]
+            ["package:flutter95/flutter95.dart" :as f95]))
+
+(defn- backdrop [on-dismiss]
+  (m/Positioned.fill
+    .child (m/GestureDetector
+             .onTap on-dismiss
+             .behavior m.HitTestBehavior/opaque
+             .child (m/Container .color (m/Color 0x66000000)))))
+
+(defn- text-button [label on-tap primary?]
+  (f95/Button95
+    .onTap on-tap
+    .padding (m.EdgeInsets/symmetric .horizontal 20.0 .vertical 6.0)
+    .height 34.0
+    .child (m/Text label
+                   .style (if primary?
+                            (m/TextStyle
+                              .inherit false
+                              .fontSize 14.0
+                              .fontWeight m.FontWeight/bold
+                              .color f95.Flutter95/black
+                              .decoration m.TextDecoration/none)
+                            f95.Flutter95/textStyle))))
+
+(defn modal
+  "Renders a modal card over a dim backdrop.
+
+   `title` — header text.
+   `body`  — a Widget shown between the header and actions (typically Text).
+   `actions` — vector of `{:label \"Print\" :on-tap fn :primary? true}` maps,
+               rendered right-aligned, with each action separated by 8 px.
+   `on-dismiss` — called when the backdrop is tapped (usually closes the modal)."
+  [{:keys [title body actions on-dismiss]}]
+  (m/Stack
+    .children
+    [(backdrop on-dismiss)
+     (m/Center
+       .child (m/Material
+                .type m.MaterialType/transparency
+                .child (m/ConstrainedBox
+                         .constraints (m/BoxConstraints .maxWidth 420.0)
+                         .child (f95/Elevation95
+                                  .type f95.Elevation95Type/up
+                                  .child (m/Container
+                                           .color f95.Flutter95/background
+                                           .padding (m.EdgeInsets/all 16.0)
+                                           .child (m/Column
+                                                    .mainAxisSize m.MainAxisSize/min
+                                                    .crossAxisAlignment m.CrossAxisAlignment/start
+                                                    .children
+                                                    [(m/Text title
+                                                             .style (m/TextStyle
+                                                                      .inherit false
+                                                                      .fontSize 14.0
+                                                                      .fontWeight m.FontWeight/bold
+                                                                      .color f95.Flutter95/black
+                                                                      .decoration m.TextDecoration/none))
+                                                     (m/SizedBox .height 12.0)
+                                                     body
+                                                     (m/SizedBox .height 16.0)
+                                                     (m/Row
+                                                       .mainAxisAlignment m.MainAxisAlignment/end
+                                                       .children
+                                                       (vec (interpose (m/SizedBox .width 8.0)
+                                                                       (mapv (fn [{:keys [label on-tap primary?]}]
+                                                                               (text-button label on-tap (boolean primary?)))
+                                                                             actions))))]))))))]))

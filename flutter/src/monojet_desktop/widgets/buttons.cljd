@@ -1,0 +1,48 @@
+(ns monojet-desktop.widgets.buttons
+  "Win95-styled button wrappers."
+  (:require ["package:flutter/material.dart" :as m]
+            ["package:flutter95/flutter95.dart" :as f95]))
+
+(defn icon-button
+  "Button95 with a Material icon + text label.
+   Pass `nil` for `on-tap` to disable. Wraps in Semantics + Tooltip for a11y."
+  [icon label on-tap]
+  (let [enabled?    (some? on-tap)
+        text-style  (if enabled? f95.Flutter95/textStyle f95.Flutter95/disabledTextStyle)
+        icon-color  (if enabled? f95.Flutter95/black (.withOpacity f95.Flutter95/black 0.35))]
+    (m/Semantics
+      .button true
+      .label label
+      .enabled enabled?
+      .child (m/Tooltip
+               .message label
+               .child (f95/Button95
+                        .onTap on-tap
+                        .child (m/Padding
+                                 .padding (m.EdgeInsets/symmetric .horizontal 8.0)
+                                 .child (m/Row
+                                          .mainAxisSize m.MainAxisSize/min
+                                          .children
+                                          [(m/Icon icon
+                                                   .size 14.0
+                                                   .color icon-color
+                                                   .semanticLabel label)
+                                           (m/SizedBox .width 6.0)
+                                           (m/Text label .style text-style)])))))))
+
+(defn chevron-toggle
+  "Compact Button95 that flips between two chevron directions based on `open?`."
+  [open? on-tap]
+  (let [label (if open? "Hide settings" "Show settings")]
+    (m/Semantics
+      .button true
+      .label label
+      .child (m/Tooltip
+               .message label
+               .child (f95/Button95
+                        .onTap on-tap
+                        .padding (m.EdgeInsets/symmetric .horizontal 6.0 .vertical 4.0)
+                        .child (m/Icon (if open? m.Icons/chevron_right m.Icons/chevron_left)
+                                       .size 20.0
+                                       .color f95.Flutter95/black
+                                       .semanticLabel label))))))

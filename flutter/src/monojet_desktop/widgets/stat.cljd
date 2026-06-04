@@ -1,0 +1,64 @@
+(ns monojet-desktop.widgets.stat
+  "Large numeric stat card with caption."
+  (:require ["package:flutter/material.dart" :as m]
+            ["package:flutter95/flutter95.dart" :as f95]))
+
+(defn big-number
+  "A bordered card showing a large bold number, a small '%' (or other suffix),
+   a caption, and an optional smaller sub-caption (e.g. \"auto · dither\").
+   Returns `SizedBox.shrink` when `value` is nil so it stays a valid Widget for
+   slots like `Positioned.child`."
+  [value suffix caption sub-caption]
+  (if-not value
+    (m.SizedBox/shrink)
+    (m/Material
+      .type m.MaterialType/transparency
+      .child (m/Container
+               .padding (m.EdgeInsets/symmetric .horizontal 12.0 .vertical 8.0)
+               .decoration (m/BoxDecoration
+                             .color f95.Flutter95/white
+                             .border (m.Border/all .color f95.Flutter95/black .width 1.0))
+               .child (m/DefaultTextStyle
+                        .style (m/TextStyle
+                                 .color f95.Flutter95/black
+                                 .decoration m.TextDecoration/none)
+                        .child (m/Column
+                                 .crossAxisAlignment m.CrossAxisAlignment/end
+                                 .mainAxisSize m.MainAxisSize/min
+                                 .children
+                                 [(m/Row
+                                    .crossAxisAlignment m.CrossAxisAlignment/baseline
+                                    .textBaseline m.TextBaseline/alphabetic
+                                    .mainAxisSize m.MainAxisSize/min
+                                    .children
+                                    [(m/Text (.toString (.round ^num value))
+                                             .style (m/TextStyle
+                                                      .fontSize 36.0
+                                                      .fontWeight m.FontWeight/bold
+                                                      .color f95.Flutter95/black
+                                                      .decoration m.TextDecoration/none
+                                                      .height 1.0))
+                                     (m/SizedBox .width 2.0)
+                                     (m/Text suffix
+                                             .style (m/TextStyle
+                                                      .fontSize 18.0
+                                                      .fontWeight m.FontWeight/w600
+                                                      .color f95.Flutter95/black
+                                                      .decoration m.TextDecoration/none))])
+                                  (m/SizedBox .height 2.0)
+                                  (m/Text caption
+                                          .style (m/TextStyle
+                                                   .inherit false
+                                                   .fontSize 14.0
+                                                   .color f95.Flutter95/black
+                                                   .decoration m.TextDecoration/none))
+                                  (if (and sub-caption (seq sub-caption))
+                                    (m/Padding
+                                      .padding (m.EdgeInsets/only .top 2.0)
+                                      .child (m/Text sub-caption
+                                                     .style (m/TextStyle
+                                                              .inherit false
+                                                              .fontSize 11.0
+                                                              .color (.withOpacity f95.Flutter95/black 0.55)
+                                                              .decoration m.TextDecoration/none)))
+                                    (m.SizedBox/shrink))]))))))

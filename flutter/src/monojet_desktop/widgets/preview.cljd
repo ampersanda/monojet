@@ -1,0 +1,58 @@
+(ns monojet-desktop.widgets.preview
+  "Image preview tile with Win95 inset frame, tap-to-act, and PDF/empty placeholder."
+  (:require ["package:flutter/material.dart" :as m]
+            ["package:flutter95/flutter95.dart" :as f95]
+            ["package:path/path.dart" :as p]
+            ["dart:io" :as io]))
+
+(defn placeholder-text
+  "Default placeholder caption: '(empty)' for nil paths, 'PDF: <name>' for PDFs."
+  [path]
+  (cond
+    (nil? path) "(empty)"
+    :else       (str "PDF: " (p/basename path))))
+
+(defn image-or-placeholder
+  "If `path` points to a non-PDF image on disk, render `Image.file`. Otherwise
+   render a centered caption derived from `placeholder-text`."
+  [label path]
+  (if (and path
+           (not (-> path p/extension .toLowerCase (= ".pdf"))))
+    (m/Image.file (io/File. path)
+                  .fit m.BoxFit/contain
+                  .key (m/ValueKey. path)
+                  .semanticLabel (str label " preview"))
+    (m/Center
+      .child (m/Padding
+               .padding (m.EdgeInsets/all 16.0)
+               .child (m/Text (placeholder-text path)
+                              .textAlign m.TextAlign/center
+                              .style f95.Flutter95/disabledTextStyle)))))
+
+(defn preview-tile
+  "A captioned, inset (Elevation95 down) tile that displays an image at `path`.
+   `on-tap` (optional) makes the whole frame clickable; we forward to a
+   Semantics widget so screen-reader users know it's actionable."
+  [label path on-tap]
+  (m/Expanded
+    .child (m/Padding
+             .padding (m.EdgeInsets/all 12.0)
+             .child (m/Column
+                      .crossAxisAlignment m.CrossAxisAlignment/start
+                      .children
+                      [(m/Padding
+                         .padding (m.EdgeInsets/only .bottom 6.0)
+                         .child (m/Text label .style f95.Flutter95/textStyle))
+                       (m/Expanded
+                         .child (m/Semantics
+                                  .button (some? on-tap)
+                                  .label (if on-tap
+                                           (str label " preview, tap to pick a file")
+                                           (str label " preview"))
+                                  .child (m/GestureDetector
+                                           .onTap on-tap
+                                           .child (f95/Elevation95
+                                                    .type f95.Elevation95Type/down
+                                                    .child (m/Container
+                                                             .color f95.Flutter95/white
+                                                             .child (image-or-placeholder label path))))))]))))

@@ -1,0 +1,95 @@
+name: Desktop app (macOS)
+
+# Tag-triggered: pushing v* publishes a release with the .app zip attached.
+# Manual workflow_dispatch is kept for ad-hoc builds without making a release.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: 'Flutter build mode'
+        required: true
+        default: 'release'
+        type: choice
+        options: [debug, profile, release]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      BUILD_MODE: ${{ github.event_name == 'push' && 'release' || inputs.build_mode }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Clojure CLI + Babashka
+        uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+          bb: latest
+
+      - name: Install ImageMagick + Ghostscript
+        run: brew install imagemagick ghostscript
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Configure Flutter for macOS desktop
+        run: flutter config --enable-macos-desktop
+
+      - name: Resolve pub packages
+        working-directory: flutter
+        run: flutter pub get
+
+      - name: Compile ClojureDart sources
+        working-directory: flutter
+        run: clj -M:cljd compile
+
+      - name: Build macOS app
+        working-directory: flutter
+        run: flutter build macos --${BUILD_MODE}
+
+      - name: Locate built .app
+        id: locate
+        working-directory: flutter
+        run: |
+          APP_PATH=$(ls -d build/macos/Build/Products/*/monojet.app | head -1)
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          echo "Built: $APP_PATH"
+
+      - name: Zip .app
+        working-directory: flutter
+        run: |
+          cd "$(dirname "${{ steps.locate.outputs.app_path }}")"
+          zip -ry "$GITHUB_WORKSPACE/monojet-desktop-${BUILD_MODE}.zip" monojet.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: monojet-desktop-${{ env.BUILD_MODE }}
+          path: monojet-desktop-${{ env.BUILD_MODE }}.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish to GitHub release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: monojet-desktop-${{ env.BUILD_MODE }}.zip
+          generate_release_notes: true

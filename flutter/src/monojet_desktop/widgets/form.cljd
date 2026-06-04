@@ -1,0 +1,152 @@
+(ns monojet-desktop.widgets.form
+  "Win95-styled form widgets: labeled fields, text inputs, checkboxes, dropdowns."
+  (:require ["package:flutter/material.dart" :as m]
+            ["package:flutter95/flutter95.dart" :as f95]))
+
+(defn labeled-field
+  "Label above a child widget, in flutter95 textStyle."
+  [label child]
+  (m/Column
+    .crossAxisAlignment m.CrossAxisAlignment/start
+    .children
+    [(m/Padding
+       .padding (m.EdgeInsets/only .bottom 4.0)
+       .child (m/Text label .style f95.Flutter95/textStyle))
+     child]))
+
+(defn num-field
+  "Labeled numeric TextField95. `on-change` receives the raw String on submit."
+  [label value on-change]
+  (labeled-field label
+    (f95/TextField95
+      .controller (m/TextEditingController .text (str value))
+      .keyboardType m.TextInputType/number
+      .onSubmitted on-change)))
+
+(def ^:private slider-height  32.0)
+(def ^:private slider-thumb-h 22.0)
+(def ^:private slider-thumb-w 14.0)
+(def ^:private slider-track-h 4.0)
+
+(defn- clamp01 ^double [^double v]
+  (max 0.0 (min 1.0 v)))
+
+(defn win95-slider
+  "Win95-styled horizontal slider. `value`, `mn`, `mx` are ints; `default-v`
+   (or nil) draws a small vertical tick at that value so the user can see the
+   recommended starting point. `on-change` receives the new integer value."
+  [^int value ^int mn ^int mx default-v on-change]
+  (m/LayoutBuilder
+    .builder
+    (fn [^m/BuildContext _ ^m/BoxConstraints c]
+      (let [w           ^double (.-maxWidth c)
+            track-area  (- w slider-thumb-w)
+            ratio       (if (= mn mx)
+                          0.0
+                          (clamp01 (/ (- value mn) (double (- mx mn)))))
+            thumb-x     (* ratio track-area)
+            default-x   (when default-v
+                          (-> (clamp01 (/ (- default-v mn) (double (- mx mn))))
+                              (* track-area)
+                              (+ (/ slider-thumb-w 2.0))))
+            handle      (fn [^double tx]
+                          (let [r (clamp01 (/ (- tx (/ slider-thumb-w 2.0)) track-area))
+                                v (.round (+ mn (* r (- mx mn))))]
+                            (on-change v)))]
+        (m/SizedBox
+          .height slider-height
+          .child (m/GestureDetector
+                   .behavior m.HitTestBehavior/opaque
+                   .onTapDown (fn [^m/TapDownDetails d]
+                                (handle (.-dx (.-localPosition d))))
+                   .onHorizontalDragUpdate (fn [^m/DragUpdateDetails d]
+                                             (handle (.-dx (.-localPosition d))))
+                   .child (m/Stack
+                            .children
+                            [(m/Positioned
+                               .left 0.0 .right 0.0
+                               .top (/ (- slider-height slider-track-h) 2.0)
+                               .child (f95/Elevation95
+                                        .type f95.Elevation95Type/down
+                                        .child (m/Container
+                                                 .height slider-track-h
+                                                 .color f95.Flutter95/background)))
+                             (if default-x
+                               (m/Positioned
+                                 .left (- default-x 0.5)
+                                 .top (- slider-height 6.0)
+                                 .child (m/Container
+                                          .width 1.0
+                                          .height 6.0
+                                          .color (.withOpacity f95.Flutter95/black 0.55)))
+                               (m.SizedBox/shrink))
+                             (m/Positioned
+                               .left thumb-x
+                               .top (/ (- slider-height slider-thumb-h) 2.0)
+                               .child (f95/Elevation95
+                                        .type f95.Elevation95Type/up
+                                        .child (m/Container
+                                                 .width slider-thumb-w
+                                                 .height slider-thumb-h
+                                                 .color f95.Flutter95/background)))])))))))
+
+(defn slider-field
+  "Labeled integer slider with the current value displayed inline. `default-v`
+   (or nil) renders a small tick on the track at that value as a hint."
+  [label ^int value ^int mn ^int mx default-v on-change]
+  (m/Column
+    .crossAxisAlignment m.CrossAxisAlignment/stretch
+    .children
+    [(m/Padding
+       .padding (m.EdgeInsets/only .bottom 4.0)
+       .child (m/Row
+                .mainAxisAlignment m.MainAxisAlignment/spaceBetween
+                .children
+                [(m/Text label .style f95.Flutter95/textStyle)
+                 (m/Text (str value) .style f95.Flutter95/textStyle)]))
+     (win95-slider value mn mx default-v on-change)]))
+
+(defn text-field
+  "Labeled TextField95. `on-change` receives the raw String on submit."
+  [label value on-change]
+  (labeled-field label
+    (f95/TextField95
+      .controller (m/TextEditingController .text (or value ""))
+      .onSubmitted on-change)))
+
+(defn checkbox-row
+  "Flutter95 Checkbox95 with built-in label."
+  [label value on-change]
+  (f95/Checkbox95
+    .value value
+    .label label
+    .onChanged on-change))
+
+(def ^:private input-height 32.0)
+
+(defn enum-popup
+  "Win95-styled dropdown wrapped in a Material context (Material's DropdownButton
+   requires a Material ancestor and Flutter95.Scaffold95 does not provide one).
+   Sized to match TextField95's 32 px height so the form fields line up.
+   `options` is a seq of {:value v :label l}."
+  [label value options on-change]
+  (labeled-field label
+    (f95/Elevation95
+      .type f95.Elevation95Type/down
+      .child (m/Material
+               .type m.MaterialType/transparency
+               .child (m/Container
+                        .color f95.Flutter95/white
+                        .height input-height
+                        .padding (m.EdgeInsets/symmetric .horizontal 8.0)
+                        .child (m/DropdownButtonHideUnderline
+                                 .child (m/DropdownButton
+                                          .value value
+                                          .isExpanded true
+                                          .style f95.Flutter95/textStyle
+                                          .items (vec (map (fn [opt]
+                                                             (m/DropdownMenuItem
+                                                               .value (:value opt)
+                                                               .child (m/Text (:label opt))))
+                                                           options))
+                                          .onChanged on-change)))))))

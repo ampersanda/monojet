@@ -1,3 +1,5 @@
+<p align="left"><img src="icon.png" alt="monojet" width="96" height="96"></p>
+
 # monojet
 
 CLI tool to convert images (and PDFs) to black-and-white optimized for **cheap laserjet printing**. Built with [Babashka](https://babashka.org/) (Clojure) and [ImageMagick](https://imagemagick.org/).
@@ -125,14 +127,76 @@ Both input and output PDFs are handled when Ghostscript is available. Multi-page
 
 For text-heavy documents start with `-m text -T 1`. For zines or comics with photos, `-m halftone -T 2` keeps photos legible while staying toner-cheap.
 
+## Desktop app (macOS)
+
+A small Flutter desktop app under `flutter/` wraps the CLI for drag-and-drop use. It's built with [ClojureDart](https://github.com/Tensegritics/ClojureDart) + [flutter95](https://pub.dev/packages/flutter95) for Win95-style chrome.
+
+![Desktop app screenshot](screenshot.png)
+
+### Install the desktop app (macOS)
+
+1. Make sure ImageMagick is installed (Ghostscript only needed for PDFs):
+
+   ```bash
+   brew install imagemagick ghostscript
+   ```
+
+2. Download the latest **monojet-desktop-release.zip** from the [Releases page](https://github.com/ampersanda/monojet/releases/latest), unzip it, and drag `monojet.app` to `/Applications`.
+
+   Or grab the zip directly:
+
+   ```bash
+   curl -L -o monojet.zip \
+     https://github.com/ampersanda/monojet/releases/latest/download/monojet-desktop-release.zip
+   unzip monojet.zip
+   mv monojet.app /Applications/
+   ```
+
+3. The app is not yet notarized, so the first launch needs Gatekeeper bypass: **right-click → Open** in Finder and confirm. Subsequent launches work normally.
+
+### Build from source
+
+If you'd rather build it yourself:
+
+**Highlights**
+
+- Drop a file (or click the **Original** pane) and conversion runs automatically — no Convert button to press.
+- **Automatic** mode (default) runs every CLI mode in parallel and shows the result of whichever saved the most toner. A small "auto · dither" caption under the toner-saved % reveals which mode won.
+- If a non-inverted run could be improved by inverting (e.g. dark-mode screenshot), a modal pops with the savings comparison and one click to apply.
+- Threshold / brightness / contrast are **sliders**. Path/binary fields are tucked behind a **Show advanced options** toggle.
+- **Save as…** to write the result anywhere; **Print** to send it to your default printer (with a confirmation modal).
+- Every settings change re-runs conversion after a 400 ms debounce.
+
+```bash
+cd flutter
+clj -M:cljd flutter -d macos     # dev: compiles cljd → Dart and launches
+flutter build macos              # release: produces flutter/build/macos/Build/Products/Release/monojet.app
+```
+
+The Xcode build phase **Bundle monojet runtime** copies `bb`, `monojet.bb`, `bb.edn`, and `src/` into the .app's `Contents/Resources/monojet/` so the bundle ships the conversion logic. `magick` (and `gs` for PDFs) must still be installed on the target machine — install via `brew install imagemagick ghostscript`. macOS deployment target is 11.0; minimum window size is 880 × 540.
+
 ## Project structure
 
 ```
 bb.edn                            # Project config (no external deps)
-monojet.bb               # Entry point for uberscript bundling
+monojet.bb                        # Entry point for uberscript bundling
 src/monojet/
   core.clj                        # CLI parsing, orchestration, reporting
   imagemagick.clj                 # ImageMagick interop (identify, analyze, convert)
+flutter/
+  deps.edn                                  # ClojureDart deps + :cljd/opts
+  pubspec.yaml                              # Flutter deps (desktop_drop, file_picker, flutter95, ...)
+  src/monojet_desktop/
+    core.cljd                               # Layout, subprocess plumbing, modals
+    state.cljd                              # Constants + the defonce app-state atom
+    widgets/
+      form.cljd                             # labeled-field, num-field, slider-field, …
+      buttons.cljd                          # icon-button, chevron-toggle (a11y-wrapped)
+      preview.cljd                          # tappable image/PDF preview tile
+      stat.cljd                             # big-number stat card
+      modal.cljd                            # reusable centered modal
+  lib/main.dart                             # Re-exports the cljd-compiled entry point
+  macos/                                    # Flutter macOS scaffold (Xcode project, entitlements, icons)
 ```
 
 ## References
@@ -140,6 +204,10 @@ src/monojet/
 - [ImageMagick: Local Adaptive Thresholding](https://imagemagick.org/script/command-line-options.php#lat) - used for the `text` mode
 - [ImageMagick: Quantization & Dithering](https://imagemagick.org/Usage/quantize/) - background on `-monochrome` and `-ordered-dither`
 - [HP toner-saving guidance](https://support.hp.com/) - inspiration for the toner-saving gamma defaults
+
+## Credits
+
+Assisted by [Claude Code](https://claude.com/claude-code).
 
 ## License
 

@@ -1,0 +1,88 @@
+(ns monojet-desktop.state
+  "App-global state: constants, runtime path resolution, default config, and the
+   live app-state atom. Pure values + the single `defonce` mutable atom — no UI,
+   no subprocess work."
+  (:require ["package:path/path.dart" :as p]
+            ["dart:io" :as io]))
+
+;; --- Constants --------------------------------------------------------------
+
+(def auto-mode "auto")
+
+(def modes
+  "Conversion modes. `:value` is what the monojet CLI accepts via `-m`. The
+   `auto` value is desktop-side only — the app tries every CLI mode and keeps
+   the one that saved the most toner; the chosen mode is shown on the stat card."
+  [{:value "auto"      :label "Automatic (pick best)"}
+   {:value "text"      :label "Text (adaptive threshold)"}
+   {:value "threshold" :label "Threshold (hard cutoff)"}
+   {:value "dither"    :label "Dither (Floyd–Steinberg)"}
+   {:value "halftone"  :label "Halftone"}
+   {:value "gray"      :label "Grayscale"}])
+
+(def cli-modes
+  "Modes that map 1:1 to the CLI's `-m` flag (auto is excluded)."
+  (filterv #(not= auto-mode (:value %)) modes))
+
+(def toner-saving-options
+  "Labeled values for the Toner-saving dropdown — CLI accepts levels 0–3."
+  [{:value 0 :label "Off"}
+   {:value 1 :label "Light"}
+   {:value 2 :label "Medium (default)"}
+   {:value 3 :label "Aggressive"}])
+
+(def image-exts
+  "Lower-case file extensions (including the leading dot) we treat as input."
+  #{".png" ".jpg" ".jpeg" ".bmp" ".tif" ".tiff" ".webp" ".gif" ".pdf"})
+
+;; --- Runtime path resolution -------------------------------------------------
+
+(defn bundled-resources-dir
+  "Path to the `monojet/` directory inside the .app's Contents/Resources.
+   The Xcode build phase `Bundle monojet runtime` copies bb + script there at
+   build time. Falls back to the development repo when running outside an app
+   bundle (e.g. unusual test harnesses)."
+  ^String []
+  (let [exe (.-resolvedExecutable io/Platform)
+        contents (some-> exe p/dirname p/dirname)
+        bundled (when contents (p/join contents "Resources" "monojet"))]
+    (if (and bundled (.existsSync (io/File. (p/join bundled "monojet.bb"))))
+      bundled
+      "/Users/ampersanda/Documents/image-laser-print")))
+
+(defn default-binary ^String []
+  (let [bundled (p/join (bundled-resources-dir) "bb")]
+    (if (.existsSync (io/File. bundled))
+      bundled
+      "/opt/homebrew/bin/bb")))
+
+;; --- Default config + initial state ------------------------------------------
+
+(def default-config
+  {:mode         auto-mode
+   :threshold    50
+   :toner-saving 2
+   :brightness   0
+   :contrast     0
+   :auto-invert? false
+   :invert?      false
+   :density      150
+   :binary       (default-binary)
+   :script       (p/join (bundled-resources-dir) "monojet.bb")
+   :work-dir     (bundled-resources-dir)
+   :extra-path   "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"})
+
+(def initial-state
+  {:input-path                 nil
+   :output-path                nil
+   :converting?                false
+   :status                     "Drop an image or PDF on the window to begin."
+   :error                      nil
+   :toner-saved                nil
+   :auto-chosen-mode           nil   ;; the winning CLI mode when :mode is "auto"
+   :invert-suggestion-checked? false
+   :modal                      nil   ;; {:kind :invert | :print-confirm :payload ...} or nil
+   :config                     default-config})
+
+(defonce app-state
+  (atom initial-state))
