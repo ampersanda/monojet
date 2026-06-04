@@ -141,21 +141,11 @@ A small Flutter desktop app under `flutter/` wraps the CLI for drag-and-drop use
    brew install imagemagick ghostscript
    ```
 
-2. Download the build for your Mac from the [Releases page](https://github.com/ampersanda/monojet/releases/latest), unzip it, and drag `monojet.app` to `/Applications`.
-
-   **Apple Silicon (M1/M2/M3/M4):**
+2. Download the latest [monojet-desktop-mac-arm64.zip](https://github.com/ampersanda/monojet/releases/latest/download/monojet-desktop-mac-arm64.zip) (Apple Silicon only), unzip it, and drag `monojet.app` to `/Applications`.
 
    ```bash
    curl -L -o monojet.zip \
      https://github.com/ampersanda/monojet/releases/latest/download/monojet-desktop-mac-arm64.zip
-   unzip monojet.zip && mv monojet.app /Applications/
-   ```
-
-   **Intel:**
-
-   ```bash
-   curl -L -o monojet.zip \
-     https://github.com/ampersanda/monojet/releases/latest/download/monojet-desktop-mac-x64.zip
    unzip monojet.zip && mv monojet.app /Applications/
    ```
 

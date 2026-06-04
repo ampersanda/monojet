@@ -20,24 +20,14 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest         # Apple Silicon
-            target_arch: arm64
-            excluded_archs: x86_64
-            zip_suffix: mac-arm64
-          - os: macos-13              # Intel
-            target_arch: x86_64
-            excluded_archs: arm64
-            zip_suffix: mac-x64
-
-    runs-on: ${{ matrix.os }}
+    # Apple Silicon only — GitHub's Intel macOS runners are unreliable / heavily
+    # queued; cross-compiling x86_64 from arm64 also requires a separate bb
+    # binary. The .app is single-arch arm64 to keep size down.
+    runs-on: macos-latest
     timeout-minutes: 30
     env:
       BUILD_MODE: ${{ github.event_name == 'push' && 'release' || inputs.build_mode }}
-      EXCLUDED_ARCHS: ${{ matrix.excluded_archs }}
+      EXCLUDED_ARCHS: x86_64
 
     steps:
       - name: Checkout
@@ -75,7 +65,7 @@ jobs:
         working-directory: flutter
         run: clojure -M:cljd compile
 
-      - name: Build macOS app (${{ matrix.target_arch }})
+      - name: Build macOS app (arm64)
         working-directory: flutter
         run: flutter build macos --${BUILD_MODE}
 
@@ -92,13 +82,13 @@ jobs:
         working-directory: flutter
         run: |
           cd "$(dirname "${{ steps.locate.outputs.app_path }}")"
-          zip -ry "$GITHUB_WORKSPACE/monojet-desktop-${{ matrix.zip_suffix }}.zip" monojet.app
+          zip -ry "$GITHUB_WORKSPACE/monojet-desktop-mac-arm64.zip" monojet.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: monojet-desktop-${{ matrix.zip_suffix }}
-          path: monojet-desktop-${{ matrix.zip_suffix }}.zip
+          name: monojet-desktop-mac-arm64
+          path: monojet-desktop-mac-arm64.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -106,7 +96,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: monojet-desktop-${{ matrix.zip_suffix }}.zip
+          files: monojet-desktop-mac-arm64.zip
           # release.yml (CLI workflow) owns the changelog; we just attach assets.
           generate_release_notes: false
           append_body: false
