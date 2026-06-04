@@ -319,7 +319,7 @@
               (m/Text (if advanced-open? "Hide advanced options" "Show advanced options")
                       .style f95.Flutter95/textStyle)])))
 
-(defn- pdf-input? [path]
+(defn- pdf-input? [^String? path]
   (and path (-> path .toLowerCase (.endsWith ".pdf"))))
 
 (defn- config-panel [state]

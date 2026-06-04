@@ -141,15 +141,22 @@ A small Flutter desktop app under `flutter/` wraps the CLI for drag-and-drop use
    brew install imagemagick ghostscript
    ```
 
-2. Download the latest **monojet-desktop-release.zip** from the [Releases page](https://github.com/ampersanda/monojet/releases/latest), unzip it, and drag `monojet.app` to `/Applications`.
+2. Download the build for your Mac from the [Releases page](https://github.com/ampersanda/monojet/releases/latest), unzip it, and drag `monojet.app` to `/Applications`.
 
-   Or grab the zip directly:
+   **Apple Silicon (M1/M2/M3/M4):**
 
    ```bash
    curl -L -o monojet.zip \
-     https://github.com/ampersanda/monojet/releases/latest/download/monojet-desktop-release.zip
-   unzip monojet.zip
-   mv monojet.app /Applications/
+     https://github.com/ampersanda/monojet/releases/latest/download/monojet-desktop-mac-arm64.zip
+   unzip monojet.zip && mv monojet.app /Applications/
+   ```
+
+   **Intel:**
+
+   ```bash
+   curl -L -o monojet.zip \
+     https://github.com/ampersanda/monojet/releases/latest/download/monojet-desktop-mac-x64.zip
+   unzip monojet.zip && mv monojet.app /Applications/
    ```
 
 3. The app is not yet notarized, so the first launch needs Gatekeeper bypass: **right-click → Open** in Finder and confirm. Subsequent launches work normally.

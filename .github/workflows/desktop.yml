@@ -1,6 +1,6 @@
 name: Desktop app (macOS)
 
-# Tag-triggered: pushing v* publishes a release with the .app zip attached.
+# Tag-triggered: pushing v* publishes a release with both arch zips attached.
 # Manual workflow_dispatch is kept for ad-hoc builds without making a release.
 on:
   push:
@@ -20,10 +20,24 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest         # Apple Silicon
+            target_arch: arm64
+            excluded_archs: x86_64
+            zip_suffix: mac-arm64
+          - os: macos-13              # Intel
+            target_arch: x86_64
+            excluded_archs: arm64
+            zip_suffix: mac-x64
+
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
       BUILD_MODE: ${{ github.event_name == 'push' && 'release' || inputs.build_mode }}
+      EXCLUDED_ARCHS: ${{ matrix.excluded_archs }}
 
     steps:
       - name: Checkout
@@ -61,7 +75,7 @@ jobs:
         working-directory: flutter
         run: clojure -M:cljd compile
 
-      - name: Build macOS app
+      - name: Build macOS app (${{ matrix.target_arch }})
         working-directory: flutter
         run: flutter build macos --${BUILD_MODE}
 
@@ -71,19 +85,20 @@ jobs:
         run: |
           APP_PATH=$(ls -d build/macos/Build/Products/*/monojet.app | head -1)
           echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
-          echo "Built: $APP_PATH"
+          echo "Built: $APP_PATH ($(du -sh "$APP_PATH" | cut -f1))"
+          lipo -info "$APP_PATH/Contents/Frameworks/FlutterMacOS.framework/FlutterMacOS" || true
 
       - name: Zip .app
         working-directory: flutter
         run: |
           cd "$(dirname "${{ steps.locate.outputs.app_path }}")"
-          zip -ry "$GITHUB_WORKSPACE/monojet-desktop-${BUILD_MODE}.zip" monojet.app
+          zip -ry "$GITHUB_WORKSPACE/monojet-desktop-${{ matrix.zip_suffix }}.zip" monojet.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: monojet-desktop-${{ env.BUILD_MODE }}
-          path: monojet-desktop-${{ env.BUILD_MODE }}.zip
+          name: monojet-desktop-${{ matrix.zip_suffix }}
+          path: monojet-desktop-${{ matrix.zip_suffix }}.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -91,5 +106,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: monojet-desktop-${{ env.BUILD_MODE }}.zip
-          generate_release_notes: true
+          files: monojet-desktop-${{ matrix.zip_suffix }}.zip
+          # release.yml (CLI workflow) owns the changelog; we just attach assets.
+          generate_release_notes: false
+          append_body: false

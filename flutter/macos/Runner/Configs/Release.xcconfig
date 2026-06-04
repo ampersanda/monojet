@@ -1,2 +1,5 @@
 #include "../../Flutter/Flutter-Release.xcconfig"
 #include "Warnings.xcconfig"
+
+// EXCLUDED_ARCHS comes from the build environment (CI matrix sets it per arch).
+// Locally, builds remain universal unless EXCLUDED_ARCHS is set.
