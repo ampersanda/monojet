@@ -151,6 +151,10 @@ A small Flutter desktop app under `flutter/` wraps the CLI for drag-and-drop use
 
 3. The app is not yet notarized, so the first launch needs Gatekeeper bypass: **right-click → Open** in Finder and confirm. Subsequent launches work normally.
 
+### Updating the desktop app
+
+The app checks for a new release on launch and again any time you click **Check for updates** in the toolbar. When a newer version is available, accepting the prompt downloads the latest `monojet-desktop-mac-arm64.zip` from GitHub, swaps it over the current install via a short detached shell script, and re-launches on the new version. The previous bundle is kept as `monojet.app.bak` until the swap completes successfully.
+
 ### Build from source
 
 If you'd rather build it yourself:

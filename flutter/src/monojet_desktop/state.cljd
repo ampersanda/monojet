@@ -72,8 +72,20 @@
    :work-dir     (bundled-resources-dir)
    :extra-path   "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"})
 
+(def initial-update
+  "Updater sub-state. `:state` is one of
+   `:idle :checking :available :downloading :error`.
+   `:progress` is `{:received bytes :total bytes-or-neg-1}` while downloading."
+  {:state     :idle
+   :current   nil
+   :latest    nil
+   :asset-url nil
+   :progress  nil
+   :error     nil})
+
 (def initial-state
-  {:input-path                 nil
+  {:app-version                nil   ;; "1.0.0" — populated at startup from PackageInfo
+   :input-path                 nil
    :output-path                nil
    :converting?                false
    :status                     "Drop an image or PDF on the window to begin."
@@ -81,7 +93,8 @@
    :toner-saved                nil
    :auto-chosen-mode           nil   ;; the winning CLI mode when :mode is "auto"
    :invert-suggestion-checked? false
-   :modal                      nil   ;; {:kind :invert | :print-confirm :payload ...} or nil
+   :modal                      nil   ;; {:kind :invert | :print-confirm | :update-* :payload ...}
+   :update                     initial-update
    :config                     default-config})
 
 (defonce app-state

@@ -1,0 +1,233 @@
+(ns monojet-desktop.updater
+  "In-app updater for the macOS desktop bundle.
+
+   Three pieces:
+   - `check-latest!` queries GitHub's `releases/latest` endpoint and compares
+     `tag_name` against the running app's version from PackageInfo.
+   - `download!` streams the release asset zip to disk and reports progress.
+   - `apply-update!` orchestrates download → unzip → spawn a detached swap
+     script → exit. The shell script waits for this process to die, then
+     `ditto`s the new bundle over the current install location and re-launches.
+
+   The release tag scheme is `vX.Y.Z` (from `.github/workflows/desktop.yml`),
+   and the asset name is fixed (`monojet-desktop-mac-arm64.zip`)."
+  (:require ["package:http/http.dart" :as http]
+            ["package:package_info_plus/package_info_plus.dart" :as pi]
+            ["package:path/path.dart" :as p]
+            ["dart:io" :as io]
+            ["dart:async" :as async]
+            ["dart:convert" :as conv]))
+
+(def ^:private repo "ampersanda/monojet")
+(def ^:private asset-name "monojet-desktop-mac-arm64.zip")
+(def ^:private latest-api
+  (str "https://api.github.com/repos/" repo "/releases/latest"))
+
+;; --- Version helpers --------------------------------------------------------
+
+(defn- parse-semver
+  "\"v1.2.3\" or \"1.2.3+4\" -> [1 2 3]. nil on malformed."
+  [^String? s]
+  (when s
+    (let [stripped (if (.startsWith s "v") (.substring s 1) s)
+          plus     (.indexOf stripped "+")
+          base     (if (>= plus 0) (.substring stripped 0 plus) stripped)
+          parts    (vec (.split base "."))
+          nums     (mapv #(int/parse % .radix 10) parts)]
+      (when (and (>= (count nums) 3) (every? some? (take 3 nums)))
+        (subvec nums 0 3)))))
+
+(defn- newer?
+  [^String? latest ^String? current]
+  (let [l (parse-semver latest)
+        c (parse-semver current)]
+    (boolean
+      (and l c
+           (loop [i 0]
+             (cond
+               (>= i 3)                false
+               (> (nth l i) (nth c i)) true
+               (< (nth l i) (nth c i)) false
+               :else                   (recur (inc i))))))))
+
+(defn- strip-v [^String tag]
+  (if (.startsWith tag "v") (.substring tag 1) tag))
+
+(defn- find-asset [assets]
+  (some (fn [a] (when (= asset-name (get a "name")) a))
+        assets))
+
+;; --- Filesystem helpers -----------------------------------------------------
+
+(defn- current-app-bundle
+  "Return the absolute path of the running .app, or nil when launched from a
+   non-bundle context (dev runs from `flutter run` still land in a .app, so
+   nil really means the install is in an unexpected layout)."
+  ^String? []
+  (let [exe       (.-resolvedExecutable io/Platform)
+        candidate (-> exe p/dirname p/dirname p/dirname)]
+    (when (and candidate (.endsWith candidate ".app"))
+      candidate)))
+
+(defn- ensure-dir! [^String path]
+  (let [d (io/Directory. path)]
+    (when-not (.existsSync d)
+      (.createSync d .recursive true))
+    d))
+
+(defn- update-dir-for [^String version]
+  (let [home (or (-> io/Platform .-environment (get "HOME")) "/tmp")
+        dir  (p/join home "Library" "Caches" "monojet-desktop" "updates" version)]
+    (ensure-dir! dir)
+    dir))
+
+;; --- Public API -------------------------------------------------------------
+
+(defn current-version!
+  "Future of the running app's version string (e.g. \"1.0.0\")."
+  []
+  (-> (.fromPlatform pi/PackageInfo)
+      (.then (fn [^pi/PackageInfo pkg] (.-version pkg)))))
+
+(defn check-latest!
+  "Returns a Future of:
+   - {:current :latest :tag :asset-url :newer?} on success
+   - {:current :error msg}                      on failure
+   `:newer?` is strict greater-than."
+  []
+  (-> (.fromPlatform pi/PackageInfo)
+      (.then
+        (fn [^pi/PackageInfo pkg]
+          (let [current (.-version pkg)
+                headers {"Accept"     "application/vnd.github+json"
+                         "User-Agent" "monojet-desktop"}]
+            (-> (http/get (Uri/parse latest-api) .headers headers)
+                (.then
+                  (fn [^http/Response resp]
+                    (if (not= 200 (.-statusCode resp))
+                      {:current current
+                       :error   (str "GitHub returned HTTP " (.-statusCode resp))}
+                      (let [body   (conv/jsonDecode (.-body resp))
+                            tag    (get body "tag_name")
+                            assets (get body "assets")
+                            asset  (when assets (find-asset assets))
+                            url    (some-> asset (get "browser_download_url"))]
+                        (if (or (nil? tag) (nil? url))
+                          {:current current
+                           :error   "Release missing tag or expected asset."}
+                          {:current   current
+                           :latest    (strip-v tag)
+                           :tag       tag
+                           :asset-url url
+                           :newer?    (newer? tag current)})))))))))
+      (.catchError
+        (fn [e _]
+          {:error (str "Update check failed: " e)}))))
+
+(defn- download!
+  "Stream `url` into `dest-path` with optional progress reporting.
+   Returns a Future of `dest-path`."
+  [^String url ^String dest-path on-progress]
+  (let [client  (http/Client.)
+        request (http/Request. "GET" (Uri/parse url))]
+    (set! (.-followRedirects request) true)
+    (-> (.send client request)
+        (.then
+          (fn [^http/StreamedResponse resp]
+            (let [code (.-statusCode resp)]
+              (if (and (>= code 200) (< code 300))
+                (let [total    (or (.-contentLength resp) -1)
+                      file     (io/File. dest-path)
+                      sink     (.openWrite file)
+                      received (atom 0)]
+                  (-> (.forEach (.-stream resp)
+                                (fn [chunk]
+                                  (.add sink chunk)
+                                  (let [n (swap! received + (.-length chunk))]
+                                    (when on-progress (on-progress n total)))))
+                      (.then (fn [_]
+                               (-> (.close sink)
+                                   (.then (fn [_]
+                                            (.close client)
+                                            dest-path)))))))
+                (do (.close client)
+                    (throw (Exception. (str "Download HTTP " code)))))))))))
+
+(defn- unzip!
+  "Use macOS `ditto` to extract `zip-path` into `dest-dir`. Returns a Future of
+   `dest-dir`."
+  [^String zip-path ^String dest-dir]
+  (-> (.run io/Process "/usr/bin/ditto"
+            #dart ^String ["-x" "-k" zip-path dest-dir])
+      (.then (fn [^io/ProcessResult r]
+               (if (zero? (.-exitCode r))
+                 dest-dir
+                 (throw (Exception. (str "ditto -x failed: " (.-stderr r)))))))))
+
+(def ^:private swap-script-body
+  ;; Args: $1 parent pid · $2 new .app source · $3 install destination.
+  ;; Waits for parent to exit, swaps via ditto with a .bak rollback, then
+  ;; re-launches whichever bundle is at the destination.
+  (str "#!/bin/sh\n"
+       "PARENT_PID=\"$1\"\n"
+       "NEW_APP=\"$2\"\n"
+       "DEST=\"$3\"\n"
+       "BACKUP=\"${DEST}.bak\"\n"
+       "while kill -0 \"$PARENT_PID\" 2>/dev/null; do sleep 0.2; done\n"
+       "sleep 0.5\n"
+       "/usr/bin/xattr -dr com.apple.quarantine \"$NEW_APP\" 2>/dev/null || true\n"
+       "rm -rf \"$BACKUP\"\n"
+       "if [ -e \"$DEST\" ]; then mv \"$DEST\" \"$BACKUP\"; fi\n"
+       "if /usr/bin/ditto \"$NEW_APP\" \"$DEST\"; then\n"
+       "  rm -rf \"$BACKUP\"\n"
+       "  /usr/bin/open \"$DEST\"\n"
+       "else\n"
+       "  if [ -e \"$BACKUP\" ]; then mv \"$BACKUP\" \"$DEST\"; fi\n"
+       "  /usr/bin/open \"$DEST\"\n"
+       "  exit 1\n"
+       "fi\n"))
+
+(defn- write-swap-script! ^String [^String dir]
+  (let [path (p/join dir "swap.sh")
+        f    (io/File. path)]
+    (.writeAsStringSync f swap-script-body)
+    (.runSync io/Process "/bin/chmod" #dart ^String ["+x" path])
+    path))
+
+(defn apply-update!
+  "Download the asset, unzip, then spawn a detached shell that waits for this
+   process to exit and swaps the bundle in place. Calls `on-progress` during
+   download, `on-error` on any failure. Does NOT return on success — the
+   process calls `io/exit` once the swap script is running."
+  [{:keys [asset-url latest on-progress on-error]}]
+  (try
+    (let [dest    (current-app-bundle)
+          _       (when (nil? dest)
+                    (throw (Exception. "Could not locate this app's install path.")))
+          dir     (update-dir-for latest)
+          zip     (p/join dir "monojet.zip")
+          unzip   (p/join dir "unzip")
+          new-app (p/join unzip "monojet.app")]
+      (ensure-dir! unzip)
+      (-> (download! asset-url zip on-progress)
+          (.then (fn [_] (unzip! zip unzip)))
+          (.then (fn [_]
+                   (when-not (.existsSync (io/Directory. new-app))
+                     (throw (Exception. "Unzipped archive missing monojet.app")))
+                   (let [script (write-swap-script! dir)
+                         args   #dart ^String [script
+                                               (str io/pid)
+                                               new-app
+                                               dest]]
+                     (.start io/Process "/bin/sh" args
+                             .mode io.ProcessStartMode/detached))))
+          (.then (fn [_]
+                   ;; Tiny grace period so the swap script has time to start
+                   ;; its kill-0 wait loop before we exit.
+                   (.then (.delayed async/Future (Duration .milliseconds 300))
+                          (fn [_] (io/exit 0)))))
+          (.catchError
+            (fn [e _]
+              (when on-error (on-error (str e)))))))
+    (catch Object e
+      (when on-error (on-error (str e))))))

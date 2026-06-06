@@ -8,6 +8,7 @@
             ["dart:io" :as io]
             ["dart:async" :as async]
             [monojet-desktop.state :as st]
+            [monojet-desktop.updater :as updater]
             [monojet-desktop.widgets.form :as form]
             [monojet-desktop.widgets.buttons :as btn]
             [monojet-desktop.widgets.preview :as preview]
@@ -186,6 +187,76 @@
 
 (defn- dismiss-modal! [state]
   (swap! state assoc :modal nil))
+
+;; --- Updater ----------------------------------------------------------------
+
+(declare start-download-and-install!)
+
+(defn- start-update-check!
+  "Hit the GitHub releases API and react to the result. When `silent?` is true
+   (launch-time auto-check) we only surface a modal if a newer version exists;
+   otherwise (toolbar click) we always close the loop with some feedback."
+  [state silent?]
+  (when-not (= :checking (-> @state :update :state))
+    (swap! state assoc :update (assoc st/initial-update :state :checking))
+    (when-not silent?
+      (swap! state assoc :modal {:kind :update-checking}))
+    (-> (updater/check-latest!)
+        (.then
+          (fn [result]
+            (cond
+              (:error result)
+              (do (swap! state assoc :update
+                         (assoc st/initial-update :state :error
+                                :current (:current result)
+                                :error   (:error result)))
+                  (if silent?
+                    (swap! state assoc :modal nil)
+                    (swap! state assoc :modal
+                           {:kind :update-error
+                            :payload {:error (:error result)}})))
+
+              (:newer? result)
+              (do (swap! state assoc :update
+                         {:state     :available
+                          :current   (:current result)
+                          :latest    (:latest result)
+                          :asset-url (:asset-url result)
+                          :progress  nil
+                          :error     nil})
+                  (swap! state assoc :modal
+                         {:kind :update-available
+                          :payload {:current (:current result)
+                                    :latest  (:latest result)}}))
+
+              :else
+              (do (swap! state assoc :update
+                         (assoc st/initial-update :state :idle
+                                :current (:current result)
+                                :latest  (:latest result)))
+                  (if silent?
+                    (swap! state assoc :modal nil)
+                    (swap! state assoc :modal
+                           {:kind :update-uptodate
+                            :payload {:current (:current result)}})))))))))
+
+(defn- start-download-and-install! [state]
+  (let [{:keys [asset-url latest]} (:update @state)]
+    (when (and asset-url latest)
+      (swap! state assoc-in [:update :state] :downloading)
+      (swap! state assoc-in [:update :progress] nil)
+      (swap! state assoc :modal {:kind :update-downloading})
+      (updater/apply-update!
+        {:asset-url   asset-url
+         :latest      latest
+         :on-progress (fn [received total]
+                        (swap! state assoc-in [:update :progress]
+                               {:received received :total total}))
+         :on-error    (fn [msg]
+                        (swap! state assoc :update
+                               (assoc st/initial-update :state :error :error msg))
+                        (swap! state assoc :modal
+                               {:kind :update-error :payload {:error msg}}))}))))
 
 (defonce ^:private *debounce-timer (atom nil))
 
@@ -446,6 +517,29 @@
 (defn- pct [^double v]
   (str (.toStringAsFixed v 1) "%"))
 
+(defn- fmt-mb [^int bytes]
+  (let [mb (/ (double bytes) (* 1024.0 1024.0))]
+    (.toStringAsFixed mb 1)))
+
+(defn- download-progress-widget [progress]
+  (let [received (or (:received progress) 0)
+        total    (or (:total progress) -1)
+        known?   (> total 0)]
+    (m/Column
+      .mainAxisSize m.MainAxisSize/min
+      .crossAxisAlignment m.CrossAxisAlignment/stretch
+      .children
+      [(modal-body-text
+         (if known?
+           (str "Downloading " (fmt-mb received) " / " (fmt-mb total) " MB…")
+           (str "Downloading " (fmt-mb received) " MB…")))
+       (m/SizedBox .height 10.0)
+       (m/LinearProgressIndicator
+         .value      (when known? (/ (double received) (double total)))
+         .minHeight  6.0)
+       (m/SizedBox .height 6.0)
+       (modal-body-text "Monojet will restart on the new version when the swap finishes.")])))
+
 (defn- render-modal [s state]
   (case (some-> s :modal :kind)
     :invert
@@ -468,6 +562,47 @@
        :actions [{:label "Cancel" :on-tap #(dismiss-modal! state)}
                  {:label "Print"  :primary? true :on-tap #(do-print! state)}]
        :on-dismiss #(dismiss-modal! state)})
+
+    :update-checking
+    (modal/modal
+      {:title "Checking for updates…"
+       :body  (modal-body-text "Talking to GitHub releases.")
+       :actions [{:label "Cancel" :on-tap #(dismiss-modal! state)}]
+       :on-dismiss #(dismiss-modal! state)})
+
+    :update-available
+    (let [{:keys [current latest]} (-> s :modal :payload)]
+      (modal/modal
+        {:title (str "Update available: " current " → " latest)
+         :body  (modal-body-text
+                  "A newer version is on GitHub. Monojet will download the new bundle and restart on the new version.")
+         :actions [{:label "Later" :on-tap #(dismiss-modal! state)}
+                   {:label "Update now" :primary? true
+                    :on-tap #(start-download-and-install! state)}]
+         :on-dismiss #(dismiss-modal! state)}))
+
+    :update-downloading
+    (modal/modal
+      {:title "Downloading update…"
+       :body  (download-progress-widget (-> s :update :progress))
+       :actions []
+       :on-dismiss nil})
+
+    :update-uptodate
+    (let [{:keys [current]} (-> s :modal :payload)]
+      (modal/modal
+        {:title "You're up to date"
+         :body  (modal-body-text (str "Running version " current "."))
+         :actions [{:label "OK" :primary? true :on-tap #(dismiss-modal! state)}]
+         :on-dismiss #(dismiss-modal! state)}))
+
+    :update-error
+    (let [{:keys [error]} (-> s :modal :payload)]
+      (modal/modal
+        {:title "Update failed"
+         :body  (modal-body-text (or error "Unknown error"))
+         :actions [{:label "OK" :primary? true :on-tap #(dismiss-modal! state)}]
+         :on-dismiss #(dismiss-modal! state)}))
 
     (m.SizedBox/shrink)))
 
@@ -535,13 +670,25 @@
                .useMaterial3 true)
       .home
       (f95/Scaffold95
-        .title "monojet"
+        .title (if-let [v (:app-version s)] (str "monojet v" v) "monojet")
         .toolbar (f95/Toolbar95
                    .actions
                    [(f95/Item95
                       .label "Open file"
-                      .onTap (fn [_] (pick-file! state)))])
+                      .onTap (fn [_] (pick-file! state)))
+                    (f95/Item95
+                      .label "Check for updates"
+                      .onTap (fn [_] (start-update-check! state false)))])
         .body (body-content s state)))))
 
 (defn main []
-  (f/run (app)))
+  (f/run (app))
+  ;; Stash the current version in state so the title bar can show it. The
+  ;; check-for-updates path also reads it from PackageInfo, but the title needs
+  ;; the value regardless of whether the network call succeeds.
+  (.then (updater/current-version!)
+         (fn [v] (swap! st/app-state assoc :app-version v)))
+  ;; Silent launch-time check. Only surfaces a modal if a newer version is out;
+  ;; failures and "up to date" are kept quiet so we don't pester the user.
+  (async/Timer. (Duration .seconds 2)
+                (fn [] (start-update-check! st/app-state true))))
