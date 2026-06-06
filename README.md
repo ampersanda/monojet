@@ -133,6 +133,16 @@ A small Flutter desktop app under `flutter/` wraps the CLI for drag-and-drop use
 
 ![Desktop app screenshot](screenshot.png)
 
+### Highlights
+
+- Drop a file (or click the **Original** pane) and conversion runs automatically — no Convert button to press.
+- **Automatic** mode (default) runs every CLI mode in parallel and shows the result of whichever saved the most toner. A small "auto · dither" caption under the toner-saved % reveals which mode won.
+- If a non-inverted run could be improved by inverting (e.g. dark-mode screenshot), a modal pops with the savings comparison and one click to apply.
+- Threshold / brightness / contrast are **sliders**. Path/binary fields are tucked behind a **Show advanced options** toggle.
+- **Save as…** to write the result anywhere; **Print** to send it to your default printer (with a confirmation modal).
+- Every settings change re-runs conversion after a 400 ms debounce.
+- Self-updates: the title bar shows the current version, and the toolbar's **Check for updates** button swaps in the latest release in place.
+
 ### Install the desktop app (macOS)
 
 1. Make sure ImageMagick is installed (Ghostscript only needed for PDFs):
@@ -159,15 +169,6 @@ The app checks for a new release on launch and again any time you click **Check 
 
 If you'd rather build it yourself:
 
-**Highlights**
-
-- Drop a file (or click the **Original** pane) and conversion runs automatically — no Convert button to press.
-- **Automatic** mode (default) runs every CLI mode in parallel and shows the result of whichever saved the most toner. A small "auto · dither" caption under the toner-saved % reveals which mode won.
-- If a non-inverted run could be improved by inverting (e.g. dark-mode screenshot), a modal pops with the savings comparison and one click to apply.
-- Threshold / brightness / contrast are **sliders**. Path/binary fields are tucked behind a **Show advanced options** toggle.
-- **Save as…** to write the result anywhere; **Print** to send it to your default printer (with a confirmation modal).
-- Every settings change re-runs conversion after a 400 ms debounce.
-
 ```bash
 cd flutter
 clj -M:cljd flutter -d macos     # dev: compiles cljd → Dart and launches
@@ -190,6 +191,7 @@ flutter/
   src/monojet_desktop/
     core.cljd                               # Layout, subprocess plumbing, modals
     state.cljd                              # Constants + the defonce app-state atom
+    updater.cljd                            # GitHub release check + in-place swap
     widgets/
       form.cljd                             # labeled-field, num-field, slider-field, …
       buttons.cljd                          # icon-button, chevron-toggle (a11y-wrapped)
