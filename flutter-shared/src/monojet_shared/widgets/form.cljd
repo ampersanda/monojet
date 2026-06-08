@@ -1,4 +1,4 @@
-(ns monojet-desktop.widgets.form
+(ns monojet-shared.widgets.form
   "Win95-styled form widgets: labeled fields, text inputs, checkboxes, dropdowns."
   (:require ["package:flutter/material.dart" :as m]
             ["package:flutter95/flutter95.dart" :as f95]))

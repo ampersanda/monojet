@@ -1,4 +1,4 @@
-(ns monojet-desktop.widgets.preview
+(ns monojet-shared.widgets.preview
   "Image preview tile with Win95 inset frame, tap-to-act, and PDF/empty placeholder."
   (:require ["package:flutter/material.dart" :as m]
             ["package:flutter95/flutter95.dart" :as f95]

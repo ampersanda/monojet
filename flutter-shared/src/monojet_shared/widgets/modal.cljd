@@ -1,4 +1,4 @@
-(ns monojet-desktop.widgets.modal
+(ns monojet-shared.widgets.modal
   "Reusable modal-card overlay: dim backdrop, centered Win95 panel, action row."
   (:require ["package:flutter/material.dart" :as m]
             ["package:flutter95/flutter95.dart" :as f95]))

@@ -1,4 +1,4 @@
-(ns monojet-desktop.widgets.buttons
+(ns monojet-shared.widgets.buttons
   "Win95-styled button wrappers."
   (:require ["package:flutter/material.dart" :as m]
             ["package:flutter95/flutter95.dart" :as f95]))

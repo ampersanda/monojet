@@ -1,4 +1,4 @@
-(ns monojet-desktop.widgets.stat
+(ns monojet-shared.widgets.stat
   "Large numeric stat card with caption."
   (:require ["package:flutter/material.dart" :as m]
             ["package:flutter95/flutter95.dart" :as f95]))

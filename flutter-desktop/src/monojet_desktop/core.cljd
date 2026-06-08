@@ -9,11 +9,11 @@
             ["dart:async" :as async]
             [monojet-desktop.state :as st]
             [monojet-desktop.updater :as updater]
-            [monojet-desktop.widgets.form :as form]
-            [monojet-desktop.widgets.buttons :as btn]
-            [monojet-desktop.widgets.preview :as preview]
-            [monojet-desktop.widgets.stat :as stat]
-            [monojet-desktop.widgets.modal :as modal]
+            [monojet-shared.widgets.form :as form]
+            [monojet-shared.widgets.buttons :as btn]
+            [monojet-shared.widgets.preview :as preview]
+            [monojet-shared.widgets.stat :as stat]
+            [monojet-shared.widgets.modal :as modal]
             [cljd.flutter :as f]))
 
 ;; --- Helpers ----------------------------------------------------------------
