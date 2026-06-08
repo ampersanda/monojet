@@ -33,6 +33,11 @@ dependencies:
   navigation_utils: 0.9.11
   # Modal bottom sheet — used to host the settings panel on phone layouts.
   family_bottom_sheet: 0.1.0
+  # Photos library picker (PHPickerViewController on iOS) — paired with
+  # file_picker so users can choose Photos vs Files at Open time.
+  image_picker: ^1.1.2
+  # iPad-class drag-and-drop from other apps (UIDropInteraction).
+  super_drag_and_drop: ^0.9.1
 
 dev_dependencies:
   flutter_test:

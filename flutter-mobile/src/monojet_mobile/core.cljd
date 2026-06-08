@@ -19,6 +19,8 @@
   (:require ["package:flutter/material.dart" :as m]
             ["package:flutter95/flutter95.dart" :as f95]
             ["package:file_picker/file_picker.dart" :as fp]
+            ["package:image_picker/image_picker.dart" :as ip]
+            ["package:super_drag_and_drop/super_drag_and_drop.dart" :as sdd]
             ["package:path/path.dart" :as p]
             ["package:share_plus/share_plus.dart" :as sp]
             ["package:printing/printing.dart" :as pr]
@@ -179,7 +181,28 @@
 
 ;; --- File pick / share / print ---------------------------------------------
 
-(defn- pick-file! [state]
+(defn- load-input!
+  "Take a freshly-picked file path, validate the extension, reset stale
+   conversion state, and kick off a convert."
+  [state path]
+  (if (image-file? path)
+    (do (swap! state assoc
+               :input-path path
+               :output-path nil
+               :toner-saved nil
+               :auto-chosen-mode nil
+               :invert-suggestion-checked? false
+               :modal nil
+               :error nil
+               :status (str "Loaded " (p/basename path)
+                            ". Converting…"))
+        (run-convert! state))
+    (swap! state assoc
+           :modal nil
+           :error (str "Unsupported file: " (p/basename path))
+           :status "Pick a PNG, JPG, or other supported image.")))
+
+(defn- pick-from-files! [state]
   (let [^async/Future fut
         (.pickFiles fp/FilePicker.platform
                     .dialogTitle "Pick an image"
@@ -191,21 +214,22 @@
              (when result
                (when-let [^fp/PlatformFile pf (-> result .-files first)]
                  (when-let [path (.-path pf)]
-                   (if (image-file? path)
-                     (do (swap! state assoc
-                                :input-path path
-                                :output-path nil
-                                :toner-saved nil
-                                :auto-chosen-mode nil
-                                :invert-suggestion-checked? false
-                                :modal nil
-                                :error nil
-                                :status (str "Loaded " (p/basename path)
-                                             ". Converting…"))
-                         (run-convert! state))
-                     (swap! state assoc
-                            :error (str "Unsupported file: " (p/basename path))
-                            :status "Pick a PNG, JPG, or other supported image.")))))))))
+                   (load-input! state path))))))))
+
+(defn- pick-from-photos! [state]
+  (let [^async/Future fut (.pickImage (ip/ImagePicker.)
+                                      .source ip.ImageSource/gallery)]
+    (.then fut
+           (fn [image]
+             (when image
+               (load-input! state (.-path image)))))))
+
+(defn- open-image!
+  "Top-level Open action — surfaces a Win95 modal asking the user whether
+   they want to pick from Photos or Files. Replaces the older single-shot
+   file picker so iOS users can reach their Photos library."
+  [state]
+  (swap! state assoc :modal {:kind :open-chooser}))
 
 (defn- share-output! [state]
   (when-let [output (:output-path @state)]
@@ -403,7 +427,7 @@
   (btn/icon-button m.Icons/tune "Settings" #(open-settings-sheet ctx state)))
 
 (defn- open-button [state]
-  (btn/icon-button m.Icons/folder_open "Open" #(pick-file! state)))
+  (btn/icon-button m.Icons/folder_open "Open" #(open-image! state)))
 
 (defn- status-bar [s]
   (f95/Elevation95
@@ -448,6 +472,20 @@
                  {:label "Print"  :primary? true :on-tap #(do-print! state)}]
        :on-dismiss #(dismiss-modal! state)})
 
+    :open-chooser
+    (modal/modal
+      {:title "Pick an image"
+       :body  (modal-body-text "Open from Photos or Files?")
+       :actions [{:label "Cancel" :on-tap #(dismiss-modal! state)}
+                 {:label "Photos" :on-tap (fn []
+                                            (dismiss-modal! state)
+                                            (pick-from-photos! state))}
+                 {:label "Files"  :primary? true
+                  :on-tap (fn []
+                            (dismiss-modal! state)
+                            (pick-from-files! state))}]
+       :on-dismiss #(dismiss-modal! state)})
+
     (m.SizedBox/shrink)))
 
 ;; --- UI: phone layout (vertical previews + bottom sheet for settings) ------
@@ -467,7 +505,7 @@
       .children
       [(m/Column
          .children
-         [(preview/preview-tile "Original"  (:input-path s)  #(pick-file! state))
+         [(preview/preview-tile "Original"  (:input-path s)  #(open-image! state))
           (preview/preview-tile "Converted" (:output-path s) nil)
           (m/Container
             .padding (m.EdgeInsets/symmetric .horizontal 8.0 .vertical 6.0)
@@ -485,6 +523,36 @@
                       (print-button s state)]))
           (status-bar s)])
        (render-modal s state)])))
+
+;; --- iPad drag-and-drop -----------------------------------------------------
+
+(defn- handle-drop!
+  "Called when a drag-and-drop session is dropped onto an iPad layout's
+   drop region. We only handle file URIs (Files app / iCloud / app
+   extensions that vend file references). Photos data drops would need
+   stream-to-temp plumbing — for now Photos goes through the picker
+   chooser instead."
+  [state ^sdd/PerformDropEvent event]
+  (let [items (-> event .-session .-items)]
+    (when (.-isNotEmpty items)
+      (let [item   (.-first items)
+            reader (.-dataReader item)]
+        (when (and reader (.canProvide reader sdd.Formats/fileUri))
+          (.then (.readValue reader sdd.Formats/fileUri)
+                 (fn [^Uri? uri]
+                   (when uri
+                     (load-input! state (.toFilePath uri))))))))))
+
+(defn- ipad-drop-region
+  "Wrap an iPad layout body in a super_drag_and_drop DropRegion so users
+   can drag an image from Files / Photos split view onto the previews."
+  [state child]
+  (sdd/DropRegion
+    .formats sdd.Formats/standardFormats
+    .hitTestBehavior m.HitTestBehavior/opaque
+    .onDropOver (fn [^sdd/DropOverEvent _] sdd.DropOperation/copy)
+    .onPerformDrop (fn [^sdd/PerformDropEvent event] (handle-drop! state event))
+    .child child))
 
 ;; --- UI: iPad layout (side-by-side previews + persistent sidebar) ----------
 
@@ -506,6 +574,7 @@
   (f/widget
     :managed [*config-open (atom true) :dispose nil :refresh-on :never]
     :watch [config-open? *config-open]
+    (ipad-drop-region state
     (m/Container
       .color f95.Flutter95/background
       .child
@@ -523,7 +592,7 @@
                             .children
                             [(m/Row
                                .children
-                               [(preview/preview-tile "Original"  (:input-path s)  #(pick-file! state))
+                               [(preview/preview-tile "Original"  (:input-path s)  #(open-image! state))
                                 (preview/preview-tile "Converted" (:output-path s) nil)])
                              (m/Positioned
                                .top 16.0
@@ -550,7 +619,7 @@
                             .alignment m.Alignment/topLeft
                             .child (config-panel state)))]))
             (ipad-bottom-bar s state)])
-         (render-modal s state)]))))
+         (render-modal s state)])))))
 
 (defn- ipad-portrait-body
   "iPad portrait layout — settings collapse to a top panel so the two
@@ -564,6 +633,7 @@
   (f/widget
     :managed [*config-open (atom false) :dispose nil :refresh-on :never]
     :watch [config-open? *config-open]
+    (ipad-drop-region state
     (m/Container
       .color f95.Flutter95/background
       .child
@@ -585,7 +655,7 @@
                 [(m/Row
                    .crossAxisAlignment m.CrossAxisAlignment/stretch
                    .children
-                   [(preview/preview-tile "Original"  (:input-path s)  #(pick-file! state))
+                   [(preview/preview-tile "Original"  (:input-path s)  #(open-image! state))
                     (preview/preview-tile "Converted" (:output-path s) nil)])
                  (m/Positioned
                    .top 16.0
@@ -601,7 +671,7 @@
                                               (when-let [am (:auto-chosen-mode s)]
                                                 (str "auto · " am)))]))]))
             (ipad-bottom-bar s state)])
-         (render-modal s state)]))))
+         (render-modal s state)])))))
 
 ;; --- UI: top-level switch --------------------------------------------------
 
@@ -634,7 +704,7 @@
                    .actions
                    [(f95/Item95
                       .label "Open"
-                      .onTap (fn [_] (pick-file! state)))])
+                      .onTap (fn [_] (open-image! state)))])
         .body (body s state)))))
 
 (defn main []
