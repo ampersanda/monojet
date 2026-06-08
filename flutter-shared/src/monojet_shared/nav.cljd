@@ -77,10 +77,14 @@
   ([^m/BuildContext ctx route]
    (push ctx route nil))
   ([^m/BuildContext ctx route args]
-   (let [page-fn (resolve-page route)
-         builder (fn [^m/BuildContext c] (page-fn c args))]
+   (let [page-fn (resolve-page route)]
+     ;; Lambda is inlined into MaterialPageRoute. so cljd can pick up the
+     ;; expected `Widget Function(BuildContext)` type from the builder
+     ;; argument. Binding it through a let drops to `dynamic Function(dynamic)`
+     ;; and Dart's analyzer rejects the assignment at compile time.
      (.push (m.Navigator/of ctx)
-            (m/MaterialPageRoute. .builder builder)))))
+            (m/MaterialPageRoute.
+              .builder (fn ^m/Widget [^m/BuildContext c] (page-fn c args)))))))
 
 ;; --- defpage macro -------------------------------------------------------
 

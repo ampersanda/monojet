@@ -286,7 +286,14 @@
 (defn- apply-button
   "Big Win95 button used as the explicit 'Apply' action on phone, where
    auto-convert is disabled. `enabled?` reflects whether there's an input
-   to convert."
+   to convert.
+
+   Subtle: Button95 has a hardcoded height of 30 dp and wraps its child
+   in its own Padding + DefaultTextStyle. Adding another Padding/Center
+   with vertical insets pushes content past the 30 dp clip and the text
+   disappears. So we DON'T add extra padding — just override the
+   DefaultTextStyle weight (inheriting the rest), bump the button height
+   to iOS HIG's 44 dp minimum tap target, and let Button95 handle layout."
   [enabled? on-tap]
   (m/Semantics
     .button true
@@ -296,17 +303,10 @@
              .message "Run conversion now"
              .child (f95/Button95
                       .onTap (when enabled? on-tap)
-                      .padding (m.EdgeInsets/symmetric .horizontal 16.0 .vertical 10.0)
+                      .height 44.0
                       .child (m/Center
                                .child (m/Text "Apply"
-                                              .style (if enabled?
-                                                       (m/TextStyle
-                                                         .inherit false
-                                                         .fontSize 14.0
-                                                         .fontWeight m.FontWeight/bold
-                                                         .color f95.Flutter95/black
-                                                         .decoration m.TextDecoration/none)
-                                                       f95.Flutter95/disabledTextStyle)))))))
+                                              .style f95.Flutter95/textStyle))))))
 
 (defn- config-panel
   "Settings panel shared by phone (bottom sheet) and iPad (top panel /
