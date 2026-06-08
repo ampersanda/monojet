@@ -35,6 +35,7 @@
             [monojet-shared.widgets.preview :as preview]
             [monojet-shared.widgets.stat :as stat]
             [monojet-shared.widgets.modal :as modal]
+            [monojet-shared.nav :as nav]
             [cljd.flutter :as f]))
 
 ;; --- Helpers ----------------------------------------------------------------
@@ -251,59 +252,133 @@
 
 (def ^:private field-gap (m/SizedBox .height 10.0))
 
-(defn- config-panel [state]
-  (f/widget
-    :let [{:keys [config]} @state
-          update-cfg! (fn [k v]
-                        (swap! state assoc-in [:config k] v)
-                        (schedule-convert! state 400))]
-    (m/Container
-      .padding (m.EdgeInsets/all 8.0)
-      .color f95.Flutter95/background
-      .child
-      (f95/Elevation95
-        .type f95.Elevation95Type/up
-        .child
-        (m/Padding
-          .padding (m.EdgeInsets/all 12.0)
-          .child
-          (m/SingleChildScrollView
-            .child
-            (m/Column
-              .crossAxisAlignment m.CrossAxisAlignment/stretch
-              .mainAxisSize m.MainAxisSize/min
-              .children
-              [(m/Text "Conversion settings"
-                       .style (m/TextStyle
-                                .inherit false
-                                .fontSize 14.0
-                                .fontWeight m.FontWeight/bold
-                                .color f95.Flutter95/black
-                                .decoration m.TextDecoration/none))
-               (m/SizedBox .height 12.0)
-               (mode-popup (:mode config) #(update-cfg! :mode %))
-               field-gap
-               (toner-popup (:toner-saving config) #(update-cfg! :toner-saving %))
-               field-gap
-               (form/slider-field "Threshold" (:threshold config) 0 100 50
-                                  #(update-cfg! :threshold %))
-               field-gap
-               (form/slider-field "Brightness" (:brightness config) -100 100 0
-                                  #(update-cfg! :brightness %))
-               field-gap
-               (form/slider-field "Contrast" (:contrast config) -100 100 0
-                                  #(update-cfg! :contrast %))
-               field-gap
-               (form/checkbox-row "auto-invert" (:auto-invert? config)
-                                  #(update-cfg! :auto-invert? (boolean %)))
-               (form/checkbox-row "force invert" (:invert? config)
-                                  #(update-cfg! :invert? (boolean %)))])))))))
+(defn- header-row
+  "Sticky header at the top of the config panel. `close-fn` (when non-nil)
+   renders a Win95 close button at the right — used by the phone bottom
+   sheet, where there's no system chrome to dismiss the sheet with."
+  [close-fn]
+  (m/Row
+    .mainAxisAlignment m.MainAxisAlignment/spaceBetween
+    .crossAxisAlignment m.CrossAxisAlignment/center
+    .children
+    [(m/Text "Conversion settings"
+             .style (m/TextStyle
+                      .inherit false
+                      .fontSize 14.0
+                      .fontWeight m.FontWeight/bold
+                      .color f95.Flutter95/black
+                      .decoration m.TextDecoration/none))
+     (if close-fn
+       (m/Semantics
+         .button true
+         .label "Close settings"
+         .child (m/Tooltip
+                  .message "Close"
+                  .child (f95/Button95
+                           .onTap close-fn
+                           .padding (m.EdgeInsets/symmetric .horizontal 6.0 .vertical 2.0)
+                           .child (m/Icon m.Icons/close
+                                          .size 16.0
+                                          .color f95.Flutter95/black
+                                          .semanticLabel "Close"))))
+       (m.SizedBox/shrink))]))
+
+(defn- apply-button
+  "Big Win95 button used as the explicit 'Apply' action on phone, where
+   auto-convert is disabled. `enabled?` reflects whether there's an input
+   to convert."
+  [enabled? on-tap]
+  (m/Semantics
+    .button true
+    .label "Apply"
+    .enabled enabled?
+    .child (m/Tooltip
+             .message "Run conversion now"
+             .child (f95/Button95
+                      .onTap (when enabled? on-tap)
+                      .padding (m.EdgeInsets/symmetric .horizontal 16.0 .vertical 10.0)
+                      .child (m/Center
+                               .child (m/Text "Apply"
+                                              .style (if enabled?
+                                                       (m/TextStyle
+                                                         .inherit false
+                                                         .fontSize 14.0
+                                                         .fontWeight m.FontWeight/bold
+                                                         .color f95.Flutter95/black
+                                                         .decoration m.TextDecoration/none)
+                                                       f95.Flutter95/disabledTextStyle)))))))
+
+(defn- config-panel
+  "Settings panel shared by phone (bottom sheet) and iPad (top panel /
+   right sidebar).
+
+   `opts` is a map:
+     :auto-convert? — when true (iPad), edits schedule a 400 ms debounced
+                      reconvert. When false (phone), edits only update
+                      state; the user taps Apply to trigger a convert.
+     :close-fn      — when non-nil, render a close button in the header.
+     :apply-fn      — when non-nil, render an Apply button at the bottom.
+                      Caller is responsible for the convert call inside."
+  ([state]
+   (config-panel state {:auto-convert? true :close-fn nil :apply-fn nil}))
+  ([state {:keys [auto-convert? close-fn apply-fn]}]
+   (f/widget
+     :let [{:keys [config input-path]} @state
+           update-cfg! (fn [k v]
+                         (swap! state assoc-in [:config k] v)
+                         (when auto-convert?
+                           (schedule-convert! state 400)))]
+     (m/Container
+       .padding (m.EdgeInsets/all 8.0)
+       .color f95.Flutter95/background
+       .child
+       (f95/Elevation95
+         .type f95.Elevation95Type/up
+         .child
+         (m/Padding
+           .padding (m.EdgeInsets/all 12.0)
+           ;; No SingleChildScrollView — the Column .mainAxisSize min lets the
+           ;; panel auto-fit its content. Callers that need scroll (e.g. small
+           ;; screens with large dynamic type) wrap the panel in a scroll view.
+           .child
+           (m/Column
+             .crossAxisAlignment m.CrossAxisAlignment/stretch
+             .mainAxisSize m.MainAxisSize/min
+             .children
+             [(header-row close-fn)
+              (m/SizedBox .height 12.0)
+              (mode-popup (:mode config) #(update-cfg! :mode %))
+              field-gap
+              (toner-popup (:toner-saving config) #(update-cfg! :toner-saving %))
+              field-gap
+              (form/slider-field "Threshold" (:threshold config) 0 100 50
+                                 #(update-cfg! :threshold %))
+              field-gap
+              (form/slider-field "Brightness" (:brightness config) -100 100 0
+                                 #(update-cfg! :brightness %))
+              field-gap
+              (form/slider-field "Contrast" (:contrast config) -100 100 0
+                                 #(update-cfg! :contrast %))
+              field-gap
+              (form/checkbox-row "auto-invert" (:auto-invert? config)
+                                 #(update-cfg! :auto-invert? (boolean %)))
+              (form/checkbox-row "force invert" (:invert? config)
+                                 #(update-cfg! :invert? (boolean %)))
+              (if apply-fn
+                (m/Padding
+                  .padding (m.EdgeInsets/only .top 16.0)
+                  .child (apply-button (some? input-path) apply-fn))
+                (m.SizedBox/shrink))])))))))
 
 (defn- open-settings-sheet
   "Open the settings sheet on phone. The flutter95 visual language is sharp
    90° corners + bevelled edges — override family_bottom_sheet's iOS-default
    rounded corners + drag-handle pill so the sheet matches the rest of the
-   chrome. config-panel already paints its own Elevation95 frame."
+   chrome. config-panel already paints its own Elevation95 frame.
+
+   Phone settings are NOT auto-applied. Edits live in app-state but only
+   trigger a convert when the user taps Apply — which also dismisses the
+   sheet so they can see the result. iPad layouts keep auto-debounce."
   [^m/BuildContext ctx state]
   (fbs.FamilyModalSheet/show
     .context ctx
@@ -311,7 +386,14 @@
     .mainContentBorderRadius m.BorderRadius/zero
     .isScrollControlled true
     .showDragHandle false
-    .builder (fn [^m/BuildContext _] (config-panel state))))
+    .builder (fn [^m/BuildContext inner-ctx]
+               (config-panel state
+                 {:auto-convert? false
+                  :close-fn      (fn [] (nav/pop inner-ctx))
+                  :apply-fn      (fn []
+                                   (nav/pop inner-ctx)
+                                   (when (:input-path @state)
+                                     (run-convert! state)))}))))
 
 ;; --- UI: shared bits --------------------------------------------------------
 
@@ -478,12 +560,14 @@
             (ipad-bottom-bar s state)])
          (render-modal s state)]))))
 
-(def ^:private top-panel-height 460.0)
-
 (defn- ipad-portrait-body
   "iPad portrait layout — settings collapse to a top panel so the two
    previews can stay side-by-side across the full width. Stat + vertical
-   chevron sit in the top-right of the preview row."
+   chevron sit in the top-right of the preview row.
+
+   The top panel uses AnimatedSize (vs AnimatedContainer with a fixed
+   height) so it auto-fits the config-panel's intrinsic Column height —
+   no magic constant to keep in sync when controls are added or removed."
   [^m/BuildContext _ s state]
   (f/widget
     :managed [*config-open (atom false) :dispose nil :refresh-on :never]
@@ -495,17 +579,13 @@
         .children
         [(m/Column
            .children
-           [(m/AnimatedContainer
+           [(m/AnimatedSize
               .duration (Duration .milliseconds 200)
               .curve m.Curves/easeInOut
-              .height (if config-open? top-panel-height 0.0)
-              .clipBehavior m.Clip/hardEdge
-              .decoration (m/BoxDecoration .color f95.Flutter95/background)
-              .child (m/OverflowBox
-                       .minHeight top-panel-height
-                       .maxHeight top-panel-height
-                       .alignment m.Alignment/topCenter
-                       .child (config-panel state)))
+              .alignment m.Alignment/topCenter
+              .child (if config-open?
+                       (config-panel state)
+                       (m.SizedBox/shrink)))
             (m/Expanded
               .child
               (m/Stack

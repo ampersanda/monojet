@@ -1,0 +1,30 @@
+(ns monojet-shared.nav
+  "Tiny helpers around Flutter's Navigator. Reduces the verbose
+   `(.pop (m.Navigator/of ctx))` to `(nav/pop ctx)`."
+  (:require ["package:flutter/material.dart" :as m]))
+
+(defn pop
+  "Pop the current route. Optional `result` is returned to the route that
+   pushed this one."
+  ([^m/BuildContext ctx]
+   (.pop (m.Navigator/of ctx)))
+  ([^m/BuildContext ctx result]
+   (.pop (m.Navigator/of ctx) result)))
+
+(defn push
+  "Push a new route built by `builder` onto the navigator. `builder` is
+   a `(fn [^m/BuildContext ctx] widget)`."
+  [^m/BuildContext ctx builder]
+  (.push (m.Navigator/of ctx)
+         (m/MaterialPageRoute. .builder builder)))
+
+(defn can-pop?
+  "Whether the current navigator has a route below the current one."
+  [^m/BuildContext ctx]
+  (.canPop (m.Navigator/of ctx)))
+
+(defn maybe-pop
+  "Pop only if there's something below. Useful when the same code path
+   might be invoked from the root route (where pop would crash)."
+  [^m/BuildContext ctx]
+  (when (can-pop? ctx) (pop ctx)))
