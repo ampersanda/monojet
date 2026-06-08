@@ -284,25 +284,17 @@
        (m.SizedBox/shrink))]))
 
 (defn- apply-button
-  "Big Win95 button used as the explicit 'Apply' action on phone, where
-   auto-convert is disabled. `enabled?` reflects whether there's an input
-   to convert.
-
-   Subtle: Button95 has a hardcoded height of 30 dp and wraps its child
-   in its own Padding + DefaultTextStyle. Adding another Padding/Center
-   with vertical insets pushes content past the 30 dp clip and the text
-   disappears. So we DON'T add extra padding — just override the
-   DefaultTextStyle weight (inheriting the rest), bump the button height
-   to iOS HIG's 44 dp minimum tap target, and let Button95 handle layout."
-  [enabled? on-tap]
+  "Big Win95 button — explicit 'Apply' action on phone (auto-convert is
+   off there). Always tappable; the caller's on-tap is responsible for
+   guarding the no-input case (it still dismisses the sheet either way)."
+  [on-tap]
   (m/Semantics
     .button true
     .label "Apply"
-    .enabled enabled?
     .child (m/Tooltip
              .message "Run conversion now"
              .child (f95/Button95
-                      .onTap (when enabled? on-tap)
+                      .onTap on-tap
                       .height 44.0
                       .child (m/Center
                                .child (m/Text "Apply"
@@ -367,7 +359,7 @@
               (if apply-fn
                 (m/Padding
                   .padding (m.EdgeInsets/only .top 16.0)
-                  .child (apply-button (some? input-path) apply-fn))
+                  .child (apply-button apply-fn))
                 (m.SizedBox/shrink))])))))))
 
 (defn- open-settings-sheet
