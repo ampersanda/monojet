@@ -621,7 +621,7 @@
     :managed [*config-open (atom true) :dispose nil :refresh-on :never]
     :watch [config-open? *config-open]
     (ipad-drop-region state
-    (m/Container
+    (m/ColoredBox
       .color f95.Flutter95/background
       .child
       (m/Stack
@@ -680,7 +680,7 @@
     :managed [*config-open (atom false) :dispose nil :refresh-on :never]
     :watch [config-open? *config-open]
     (ipad-drop-region state
-    (m/Container
+    (m/ColoredBox
       .color f95.Flutter95/background
       .child
       (m/Stack

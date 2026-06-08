@@ -8,7 +8,7 @@
     .child (m/GestureDetector
              .onTap on-dismiss
              .behavior m.HitTestBehavior/opaque
-             .child (m/Container .color (m/Color 0x66000000)))))
+             .child (m/ColoredBox .color (m/Color 0x66000000)))))
 
 (defn- text-button [label on-tap primary?]
   (f95/Button95
