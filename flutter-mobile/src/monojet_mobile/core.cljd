@@ -402,7 +402,19 @@
 
 (def ^:private sidebar-width 320.0)
 
-(defn- ipad-body [^m/BuildContext _ s state]
+(defn- ipad-bottom-bar [s state]
+  (m/Container
+    .padding (m.EdgeInsets/all 8.0)
+    .color f95.Flutter95/background
+    .child (m/Row
+             .children
+             [(m/Expanded .child (status-bar s))
+              (m/SizedBox .width 8.0)
+              (print-button s state)
+              (m/SizedBox .width 6.0)
+              (save-button s state)])))
+
+(defn- ipad-landscape-body [^m/BuildContext _ s state]
   (f/widget
     :managed [*config-open (atom true) :dispose nil :refresh-on :never]
     :watch [config-open? *config-open]
@@ -449,16 +461,60 @@
                             .maxWidth sidebar-width
                             .alignment m.Alignment/topLeft
                             .child (config-panel state)))]))
-            (m/Container
-              .padding (m.EdgeInsets/all 8.0)
-              .color f95.Flutter95/background
-              .child (m/Row
-                       .children
-                       [(m/Expanded .child (status-bar s))
-                        (m/SizedBox .width 8.0)
-                        (print-button s state)
-                        (m/SizedBox .width 6.0)
-                        (save-button s state)]))])
+            (ipad-bottom-bar s state)])
+         (render-modal s state)]))))
+
+(def ^:private top-panel-height 460.0)
+
+(defn- ipad-portrait-body
+  "iPad portrait layout — settings collapse to a top panel so the two
+   previews can stay side-by-side across the full width. Stat + vertical
+   chevron sit in the top-right of the preview row."
+  [^m/BuildContext _ s state]
+  (f/widget
+    :managed [*config-open (atom false) :dispose nil :refresh-on :never]
+    :watch [config-open? *config-open]
+    (m/Container
+      .color f95.Flutter95/background
+      .child
+      (m/Stack
+        .children
+        [(m/Column
+           .children
+           [(m/AnimatedContainer
+              .duration (Duration .milliseconds 200)
+              .curve m.Curves/easeInOut
+              .height (if config-open? top-panel-height 0.0)
+              .clipBehavior m.Clip/hardEdge
+              .decoration (m/BoxDecoration .color f95.Flutter95/background)
+              .child (m/OverflowBox
+                       .minHeight top-panel-height
+                       .maxHeight top-panel-height
+                       .alignment m.Alignment/topCenter
+                       .child (config-panel state)))
+            (m/Expanded
+              .child
+              (m/Stack
+                .children
+                [(m/Row
+                   .crossAxisAlignment m.CrossAxisAlignment/stretch
+                   .children
+                   [(preview/preview-tile "Original"  (:input-path s)  #(pick-file! state))
+                    (preview/preview-tile "Converted" (:output-path s) nil)])
+                 (m/Positioned
+                   .top 16.0
+                   .right 16.0
+                   .child (m/Column
+                            .crossAxisAlignment m.CrossAxisAlignment/end
+                            .mainAxisSize m.MainAxisSize/min
+                            .children
+                            [(btn/vert-toggle config-open?
+                                              #(swap! *config-open not))
+                             (m/SizedBox .height 10.0)
+                             (stat/big-number (:toner-saved s) "%" "toner saved"
+                                              (when-let [am (:auto-chosen-mode s)]
+                                                (str "auto · " am)))]))]))
+            (ipad-bottom-bar s state)])
          (render-modal s state)]))))
 
 ;; --- UI: top-level switch --------------------------------------------------
@@ -467,9 +523,12 @@
   (m/LayoutBuilder
     .builder
     (fn [^m/BuildContext ctx ^m/BoxConstraints c]
-      (if (< (.-maxWidth c) 600.0)
-        (phone-body ctx s state)
-        (ipad-body  ctx s state)))))
+      (let [w (.-maxWidth  c)
+            h (.-maxHeight c)]
+        (cond
+          (< w 600.0)          (phone-body          ctx s state)
+          (> h w)              (ipad-portrait-body  ctx s state)
+          :else                (ipad-landscape-body ctx s state))))))
 
 (defn app []
   (f/widget

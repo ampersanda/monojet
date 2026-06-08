@@ -31,7 +31,9 @@
                                            (m/Text label .style text-style)])))))))
 
 (defn chevron-toggle
-  "Compact Button95 that flips between two chevron directions based on `open?`."
+  "Compact Button95 that flips between two chevron directions based on `open?`.
+   Use for toggling a left/right sidebar — the icon points sideways to hint at the
+   slide direction. For top/bottom panels, prefer `vert-toggle`."
   [open? on-tap]
   (let [label (if open? "Hide settings" "Show settings")]
     (m/Semantics
@@ -43,6 +45,25 @@
                         .onTap on-tap
                         .padding (m.EdgeInsets/symmetric .horizontal 6.0 .vertical 4.0)
                         .child (m/Icon (if open? m.Icons/chevron_right m.Icons/chevron_left)
+                                       .size 20.0
+                                       .color f95.Flutter95/black
+                                       .semanticLabel label))))))
+
+(defn vert-toggle
+  "Compact Button95 that flips between expand_more / expand_less based on `open?`.
+   Use for toggling a top/bottom panel — the icon points down/up to hint at the
+   slide direction. For left/right sidebars, prefer `chevron-toggle`."
+  [open? on-tap]
+  (let [label (if open? "Hide settings" "Show settings")]
+    (m/Semantics
+      .button true
+      .label label
+      .child (m/Tooltip
+               .message label
+               .child (f95/Button95
+                        .onTap on-tap
+                        .padding (m.EdgeInsets/symmetric .horizontal 6.0 .vertical 4.0)
+                        .child (m/Icon (if open? m.Icons/expand_less m.Icons/expand_more)
                                        .size 20.0
                                        .color f95.Flutter95/black
                                        .semanticLabel label))))))
