@@ -1,0 +1,221 @@
+(ns monojet-mobile.engine
+  "Pure-Dart conversion engine for the mobile build. Image-only — PDF is
+   intentionally unsupported here. Replaces the CLI/ImageMagick subprocess
+   the desktop app uses.
+
+   Pipeline (mirrors monojet.imagemagick on the desktop side):
+   alpha-flatten over white → optional invert → grayscale → gamma →
+   brightness/contrast → mode-specific binarize → encode.
+
+   `convert!` is synchronous; the UI wraps it in `compute()` to keep the
+   render thread responsive."
+  (:require ["package:image/image.dart" :as img]
+            ["dart:io" :as io]))
+
+;; --- Constants --------------------------------------------------------------
+
+(def ^:private bayer-8
+  "8×8 ordered-dither threshold matrix. Values 0..63 are scaled by 4 at
+   lookup time so the lookup result lies in 0..252 against a 0..255 luminance."
+  #dart ^int [ 0 32  8 40  2 34 10 42
+              48 16 56 24 50 18 58 26
+              12 44  4 36 14 46  6 38
+              60 28 52 20 62 30 54 22
+               3 35 11 43  1 33  9 41
+              51 19 59 27 49 17 57 25
+              15 47  7 39 13 45  5 37
+              63 31 55 23 61 29 53 21])
+
+;; --- Pure helpers -----------------------------------------------------------
+
+(defn- gamma-for-toner-saving ^double [^int level]
+  (case (int level)
+    0 1.0
+    1 1.3
+    2 1.6
+    3 2.0
+    1.6))
+
+(defn- clamp-byte ^double [^double v]
+  (cond (< v 0.0)   0.0
+        (> v 255.0) 255.0
+        :else       v))
+
+(defn- adjust-multiplier
+  "Map the CLI's -100..100 brightness/contrast range to image-package's
+   multiplier (1.0 = no change). Zero short-circuits to identity."
+  ^double [^int v]
+  (if (zero? v)
+    1.0
+    (+ 1.0 (/ (double v) 100.0))))
+
+;; --- I/O --------------------------------------------------------------------
+
+(defn- decode-or-throw! ^img/Image [^String path]
+  (let [bytes   (.readAsBytesSync (io/File. path))
+        decoded (img/decodeImage bytes)]
+    (or decoded
+        (throw (Exception. (str "Could not decode image: " path))))))
+
+(defn- encode-by-ext [^img/Image image ^String out-path]
+  (let [lower (.toLowerCase out-path)]
+    (if (or (.endsWith lower ".jpg") (.endsWith lower ".jpeg"))
+      (img/encodeJpg image .quality 95)
+      (img/encodePng image))))
+
+(defn- write-image! [^img/Image image ^String out-path]
+  (.writeAsBytesSync (io/File. out-path) (encode-by-ext image out-path)))
+
+;; --- Pixel pipeline steps ---------------------------------------------------
+
+(defn- alpha-flatten-onto-white!
+  "Composite each pixel over a white background so transparent regions read as
+   paper (white) rather than ink. After this step alpha is solid 255."
+  [^img/Image image]
+  (let [w (.-width image)
+        h (.-height image)]
+    (dotimes [y h]
+      (dotimes [x w]
+        (let [^img/Pixel p (.getPixel image x y)
+              a            (.-a p)]
+          (when (< a 255)
+            (let [alpha (/ (double a) 255.0)
+                  inv   (- 1.0 alpha)]
+              (set! (.-r p) (+ (* alpha (.-r p)) (* inv 255.0)))
+              (set! (.-g p) (+ (* alpha (.-g p)) (* inv 255.0)))
+              (set! (.-b p) (+ (* alpha (.-b p)) (* inv 255.0)))
+              (set! (.-a p) 255))))))))
+
+(defn- mean-luminance ^double [^img/Image image]
+  (let [w (.-width image)
+        h (.-height image)
+        n (double (* w h))]
+    (loop [y 0 total 0.0]
+      (if (>= y h)
+        (/ total n)
+        (recur (inc y)
+               (loop [x 0 row-total total]
+                 (if (>= x w)
+                   row-total
+                   (recur (inc x)
+                          (+ row-total
+                             (.-luminanceNormalized
+                               (.getPixel image x y)))))))))))
+
+(defn- set-gray! [^img/Pixel p ^double v]
+  (let [c (clamp-byte v)]
+    (set! (.-r p) c)
+    (set! (.-g p) c)
+    (set! (.-b p) c)
+    (set! (.-a p) 255)))
+
+(defn- apply-threshold-mode!
+  [^img/Image image ^int threshold-pct]
+  (let [thr (* 2.55 threshold-pct)
+        w   (.-width image)
+        h   (.-height image)]
+    (dotimes [y h]
+      (dotimes [x w]
+        (let [^img/Pixel p (.getPixel image x y)
+              out (if (>= (.-r p) thr) 255.0 0.0)]
+          (set-gray! p out))))))
+
+(defn- apply-text-mode!
+  "Local Adaptive Threshold — match desktop's `magick -lat 20x20-10%`.
+   `gaussianBlur radius 10` approximates the 20-window mean; subtract a small
+   bias so flat regions tilt toward white."
+  [^img/Image image]
+  (let [^img/Image blurred (img/gaussianBlur image .radius 10)
+        bias 25.0
+        w    (.-width image)
+        h    (.-height image)]
+    (dotimes [y h]
+      (dotimes [x w]
+        (let [^img/Pixel src (.getPixel image   x y)
+              ^img/Pixel ref (.getPixel blurred x y)
+              v      (.-r src)
+              local  (- (.-r ref) bias)
+              out    (if (>= v local) 255.0 0.0)]
+          (set-gray! src out))))))
+
+(defn- apply-halftone-mode!
+  [^img/Image image]
+  (let [w (.-width image)
+        h (.-height image)]
+    (dotimes [y h]
+      (dotimes [x w]
+        (let [^img/Pixel p (.getPixel image x y)
+              thr (* 4.0 (nth bayer-8 (+ (* (rem y 8) 8) (rem x 8))))
+              out (if (>= (.-r p) thr) 255.0 0.0)]
+          (set-gray! p out))))))
+
+(defn- diffuse!
+  "Add `delta` to the gray value at (x,y) (treating the pixel as already
+   grayscale: r=g=b), clamping to 0..255."
+  [^img/Image image ^int x ^int y ^double delta]
+  (let [^img/Pixel q (.getPixel image x y)
+        v (clamp-byte (+ (.-r q) delta))]
+    (set! (.-r q) v)
+    (set! (.-g q) v)
+    (set! (.-b q) v)))
+
+(defn- apply-floyd-steinberg!
+  "Floyd–Steinberg error diffusion to pure B/W. Walks left-to-right,
+   top-to-bottom, propagating quantization error to the four standard
+   neighbors with the 7/3/5/1 (over 16) weights."
+  [^img/Image image]
+  (let [w (.-width image)
+        h (.-height image)]
+    (dotimes [y h]
+      (dotimes [x w]
+        (let [^img/Pixel p (.getPixel image x y)
+              old   (.-r p)
+              new   (if (>= old 127.5) 255.0 0.0)
+              err   (- old new)]
+          (set-gray! p new)
+          (when (< (inc x) w)
+            (diffuse! image (inc x) y       (* err 0.4375)))
+          (when (< (inc y) h)
+            (when (> x 0)
+              (diffuse! image (dec x) (inc y) (* err 0.1875)))
+            (diffuse! image x       (inc y) (* err 0.3125))
+            (when (< (inc x) w)
+              (diffuse! image (inc x) (inc y) (* err 0.0625)))))))))
+
+;; --- Top-level convert -----------------------------------------------------
+
+(defn convert!
+  "Convert `in-path` to `out-path` per `config`. Synchronous — the UI calls
+   this inside a `compute()` so it runs on a background isolate.
+
+   `config` shape mirrors `monojet-mobile.state/default-config` (minus the
+   mode = \"auto\" sentinel; the auto-mode driver lives in core.cljd and
+   calls convert! once per candidate mode).
+
+   Returns `{:in-mean d, :out-mean d, :saved d}` where means are in [0.0, 1.0]
+   (0 = full ink, 1 = white paper) and `saved` is the toner-saving estimate
+   in [0.0, 1.0]."
+  [^String in-path ^String out-path
+   {:keys [mode threshold toner-saving brightness contrast invert?]}]
+  (let [src     (decode-or-throw! in-path)]
+    (alpha-flatten-onto-white! src)
+    (let [in-mean  (mean-luminance src)
+          inverted (if invert? (img/invert src) src)
+          gray     (img/grayscale inverted)
+          adjusted (img/adjustColor gray
+                                    .gamma      (gamma-for-toner-saving toner-saving)
+                                    .brightness (adjust-multiplier brightness)
+                                    .contrast   (adjust-multiplier contrast))]
+      (case mode
+        "text"      (apply-text-mode!      adjusted)
+        "threshold" (apply-threshold-mode! adjusted threshold)
+        "dither"    (apply-floyd-steinberg! adjusted)
+        "halftone"  (apply-halftone-mode!  adjusted)
+        "gray"      nil
+        nil)
+      (let [out-mean (mean-luminance adjusted)
+            saved    (max 0.0 (- (- 1.0 in-mean) (- 1.0 out-mean)))]
+        (write-image! adjusted out-path)
+        {:in-mean  in-mean
+         :out-mean out-mean
+         :saved    saved}))))
