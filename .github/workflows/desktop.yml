@@ -58,20 +58,20 @@ jobs:
         run: flutter config --enable-macos-desktop
 
       - name: Resolve pub packages
-        working-directory: flutter
+        working-directory: flutter-desktop
         run: flutter pub get
 
       - name: Compile ClojureDart sources
-        working-directory: flutter
+        working-directory: flutter-desktop
         run: clojure -M:cljd compile
 
       - name: Build macOS app (arm64)
-        working-directory: flutter
+        working-directory: flutter-desktop
         run: flutter build macos --${BUILD_MODE}
 
       - name: Locate built .app
         id: locate
-        working-directory: flutter
+        working-directory: flutter-desktop
         run: |
           APP_PATH=$(ls -d build/macos/Build/Products/*/monojet.app | head -1)
           echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
@@ -79,7 +79,7 @@ jobs:
           lipo -info "$APP_PATH/Contents/Frameworks/FlutterMacOS.framework/FlutterMacOS" || true
 
       - name: Zip .app
-        working-directory: flutter
+        working-directory: flutter-desktop
         run: |
           cd "$(dirname "${{ steps.locate.outputs.app_path }}")"
           zip -ry "$GITHUB_WORKSPACE/monojet-desktop-mac-arm64.zip" monojet.app

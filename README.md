@@ -129,7 +129,7 @@ For text-heavy documents start with `-m text -T 1`. For zines or comics with pho
 
 ## Desktop app (macOS)
 
-A small Flutter desktop app under `flutter/` wraps the CLI for drag-and-drop use. It's built with [ClojureDart](https://github.com/Tensegritics/ClojureDart) + [flutter95](https://pub.dev/packages/flutter95) for Win95-style chrome.
+A small Flutter desktop app under `flutter-desktop/` wraps the CLI for drag-and-drop use. It's built with [ClojureDart](https://github.com/Tensegritics/ClojureDart) + [flutter95](https://pub.dev/packages/flutter95) for Win95-style chrome.
 
 ![Desktop app screenshot](screenshot.png)
 
@@ -170,9 +170,9 @@ The app checks for a new release on launch and again any time you click **Check 
 If you'd rather build it yourself:
 
 ```bash
-cd flutter
+cd flutter-desktop
 clj -M:cljd flutter -d macos     # dev: compiles cljd → Dart and launches
-flutter build macos              # release: produces flutter/build/macos/Build/Products/Release/monojet.app
+flutter build macos              # release: produces flutter-desktop/build/macos/Build/Products/Release/monojet.app
 ```
 
 The Xcode build phase **Bundle monojet runtime** copies `bb`, `monojet.bb`, `bb.edn`, and `src/` into the .app's `Contents/Resources/monojet/` so the bundle ships the conversion logic. `magick` (and `gs` for PDFs) must still be installed on the target machine — install via `brew install imagemagick ghostscript`. macOS deployment target is 11.0; minimum window size is 880 × 540.
@@ -185,7 +185,7 @@ monojet.bb                        # Entry point for uberscript bundling
 src/monojet/
   core.clj                        # CLI parsing, orchestration, reporting
   imagemagick.clj                 # ImageMagick interop (identify, analyze, convert)
-flutter/
+flutter-desktop/
   deps.edn                                  # ClojureDart deps + :cljd/opts
   pubspec.yaml                              # Flutter deps (desktop_drop, file_picker, flutter95, ...)
   src/monojet_desktop/
