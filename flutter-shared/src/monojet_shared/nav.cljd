@@ -1,7 +1,25 @@
 (ns monojet-shared.nav
-  "Tiny helpers around Flutter's Navigator. Reduces the verbose
-   `(.pop (m.Navigator/of ctx))` to `(nav/pop ctx)`."
+  "Tiny helpers around Flutter's Navigator + a symbol-based page registry.
+
+   Two ways to navigate:
+
+   1. Pass the builder fn directly — fine for one-off routes:
+        (nav/push ctx (fn [_] (settings-page state)))
+
+   2. Define pages with `defpage` and reference them by fully-qualified
+      syntax-quoted symbol — recommended once you have >2 routes:
+        (nav/defpage home [ctx args]
+          (m/Scaffold ...))
+        (nav/push ctx `home)        ;; same ns
+        (nav/push ctx `pages/home)  ;; cross-ns via alias
+
+   The registry is a single defonce atom; `defpage` registers under the
+   page function's fully-qualified namespace symbol so cross-namespace
+   collisions are impossible. Hot-reload-friendly — re-evaluating a
+   `defpage` form just overwrites the registry entry."
   (:require ["package:flutter/material.dart" :as m]))
+
+;; --- Helpers around Navigator.of -----------------------------------------
 
 (defn pop
   "Pop the current route. Optional `result` is returned to the route that
@@ -10,13 +28,6 @@
    (.pop (m.Navigator/of ctx)))
   ([^m/BuildContext ctx result]
    (.pop (m.Navigator/of ctx) result)))
-
-(defn push
-  "Push a new route built by `builder` onto the navigator. `builder` is
-   a `(fn [^m/BuildContext ctx] widget)`."
-  [^m/BuildContext ctx builder]
-  (.push (m.Navigator/of ctx)
-         (m/MaterialPageRoute. .builder builder)))
 
 (defn can-pop?
   "Whether the current navigator has a route below the current one."
@@ -28,3 +39,71 @@
    might be invoked from the root route (where pop would crash)."
   [^m/BuildContext ctx]
   (when (can-pop? ctx) (pop ctx)))
+
+;; --- Symbol-based page registry ------------------------------------------
+
+(defonce ^:private *routes (atom {}))
+
+(defn register-page!
+  "Register `sym` → `page-fn` in the route table. Called by `defpage`;
+   call directly only when you can't use the macro (e.g. registering an
+   imported function from a 3rd-party package)."
+  [sym page-fn]
+  (swap! *routes assoc sym page-fn))
+
+(defn registered-pages
+  "All page symbols currently in the registry. Useful for debug screens."
+  []
+  (keys @*routes))
+
+(defn- resolve-page [route]
+  (cond
+    (symbol? route) (or (get @*routes route)
+                        (throw (Exception. (str "Unknown route: " route
+                                                ". Registered: "
+                                                (pr-str (registered-pages))))))
+    (fn? route)     route
+    :else           (throw (Exception. (str "nav/push expects a symbol or fn, got: "
+                                            (pr-str route))))))
+
+(defn push
+  "Push a route onto the navigator. `route` is either:
+     - a symbol previously registered via `defpage` (call the page fn
+       with `[ctx args?]`)
+     - a `(fn [^m/BuildContext ctx] widget)` builder
+
+   `args` (optional) is passed as the second arg to the registered page
+   fn — use it for route parameters (e.g. `{:doc-id 42}`)."
+  ([^m/BuildContext ctx route]
+   (push ctx route nil))
+  ([^m/BuildContext ctx route args]
+   (let [page-fn (resolve-page route)
+         builder (fn [^m/BuildContext c] (page-fn c args))]
+     (.push (m.Navigator/of ctx)
+            (m/MaterialPageRoute. .builder builder)))))
+
+;; --- defpage macro -------------------------------------------------------
+
+(defmacro defpage
+  "Define a page function and register it under its fully-qualified
+   syntax-quoted symbol. The function signature is `[ctx args]` — `args`
+   may be `nil` when the caller used the single-arg `push`.
+
+   Expands to a `defn` + `register-page!` call so re-evaluating the form
+   updates both the var and the registry (hot-reload friendly).
+
+   Usage:
+     (nav/defpage home-page [ctx _args]
+       (m/Scaffold ...))
+
+     ;; Same ns:
+     (nav/push ctx `home-page)
+
+     ;; Cross-ns:
+     (nav/push ctx `my-app.pages/home-page)
+     (nav/push ctx `my-app.pages/editor-page {:doc-id 42})"
+  [name args & body]
+  (let [qname (symbol (str *ns*) (str name))]
+    `(do
+       (defn ~name ~args ~@body)
+       (register-page! '~qname ~name))))
