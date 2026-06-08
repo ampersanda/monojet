@@ -24,5 +24,9 @@ bw.png
 bw-*.png
 bw-output/
 
+# Flutter/Xcode build artifacts that occasionally leak into the repo root
+# (e.g. SPM workspace state when iOS schemes are resolved from CWD).
+/build/
+
 # Local samples (personal content)
 sample/

@@ -1,0 +1,67 @@
+(ns monojet-mobile.state
+  "App-global state for the mobile build: constants, default config, and the
+   live app-state atom. Subprocess-specific keys (binary/script/work-dir/
+   extra-path) are intentionally absent — mobile runs a pure-Dart engine."
+  (:require [cljd.flutter :as f]))
+
+;; --- Constants --------------------------------------------------------------
+
+(def auto-mode "auto")
+
+(def modes
+  "Conversion modes. The mobile auto-mode pool is intentionally narrower than
+   desktop's: pure-Dart processing is slower than ImageMagick, so we keep auto
+   to a small set of high-yield modes (text + dither + halftone) and require
+   the user to opt into the others explicitly."
+  [{:value "auto"      :label "Automatic (pick best)"}
+   {:value "text"      :label "Text (adaptive threshold)"}
+   {:value "threshold" :label "Threshold (hard cutoff)"}
+   {:value "dither"    :label "Dither (Floyd–Steinberg)"}
+   {:value "halftone"  :label "Halftone"}
+   {:value "gray"      :label "Grayscale"}])
+
+(def auto-mode-pool
+  "CLI modes that the mobile 'auto' mode races. Smaller than desktop's full
+   pool to keep latency tolerable in single-threaded Dart."
+  ["text" "dither" "halftone"])
+
+(def toner-saving-options
+  [{:value 0 :label "Off"}
+   {:value 1 :label "Light"}
+   {:value 2 :label "Medium (default)"}
+   {:value 3 :label "Aggressive"}])
+
+(def image-exts
+  "Allowed input extensions. PDF is intentionally absent — mobile is image-only."
+  #{".png" ".jpg" ".jpeg" ".bmp" ".tif" ".tiff" ".webp" ".gif"})
+
+(def allowed-extensions-for-picker
+  "Lower-case extensions (no leading dot) passed to file_picker on iOS."
+  ["png" "jpg" "jpeg" "bmp" "tif" "tiff" "webp" "gif"])
+
+;; --- Default config + initial state ------------------------------------------
+
+(def default-config
+  {:mode         auto-mode
+   :threshold    50
+   :toner-saving 2
+   :brightness   0
+   :contrast     0
+   :auto-invert? false
+   :invert?      false})
+
+(def initial-state
+  {:app-version                nil
+   :input-path                 nil
+   :output-path                nil
+   :converting?                false
+   :status                     "Tap Original to pick an image."
+   :error                      nil
+   :toner-saved                nil
+   :auto-chosen-mode           nil
+   :invert-suggestion-checked? false
+   :modal                      nil
+   :config                     default-config})
+
+(defonce app-state
+  (atom initial-state))

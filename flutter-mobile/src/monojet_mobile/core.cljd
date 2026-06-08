@@ -1,0 +1,32 @@
+(ns monojet-mobile.core
+  "Entry point for the mobile build. Phase 2 scaffold — full UI lands in
+   Phase 4, full conversion engine lands in Phase 3."
+  (:require ["package:flutter/material.dart" :as m]
+            ["package:flutter95/flutter95.dart" :as f95]
+            [monojet-mobile.state :as st]
+            [cljd.flutter :as f]))
+
+(defn- placeholder-body []
+  (m/Center
+    .child (m/Padding
+             .padding (m.EdgeInsets/all 20.0)
+             .child (m/Text "monojet mobile — scaffold"
+                            .style f95.Flutter95/textStyle))))
+
+(defn app []
+  (f/widget
+    :watch [s st/app-state]
+    (m/MaterialApp
+      .title "monojet"
+      .debugShowCheckedModeBanner false
+      .color f95.Flutter95/background
+      .theme (m/ThemeData
+               .fontFamily "MS Sans Serif"
+               .useMaterial3 true)
+      .home
+      (f95/Scaffold95
+        .title (if-let [v (:app-version s)] (str "monojet v" v) "monojet")
+        .body (placeholder-body)))))
+
+(defn main []
+  (f/run (app)))

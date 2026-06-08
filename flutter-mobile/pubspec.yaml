@@ -1,0 +1,43 @@
+name: monojet_mobile
+description: "Mobile UI for monojet — laser-printer-optimized image conversion (iOS / iPadOS)."
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Win95-styled widgets — shared with the desktop app.
+  flutter95: ^1.4.0
+  # File-system path helpers.
+  path: ^1.9.0
+  # Document picker (UIDocumentPickerViewController on iOS).
+  file_picker: ^8.1.7
+  # Pure-Dart image pipeline — replaces the desktop CLI's ImageMagick.
+  image: ^4.3.0
+  # Sandboxed Documents / temp directory.
+  path_provider: ^2.1.4
+  # AirPrint integration.
+  printing: ^5.13.0
+  # PDF wrapper for printing raster images.
+  pdf: ^3.11.0
+  # iOS Share Sheet (Save to Files / Photos / AirDrop).
+  share_plus: ^10.0.0
+  # Read the running version from Info.plist.
+  package_info_plus: ^8.0.0
+  # Declarative routing for phone-vs-iPad layouts and modal sheets.
+  navigation_utils: 0.9.11
+  # Modal bottom sheet — used to host the settings panel on phone layouts.
+  family_bottom_sheet: 0.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
