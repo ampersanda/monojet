@@ -37,6 +37,7 @@ migrate_working_dir/
 .cpcache/
 .clojuredart/
 lib/cljd-out/
+REPL.lock
 
 # Symbolication related
 app.*.symbols

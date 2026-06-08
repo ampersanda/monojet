@@ -224,12 +224,70 @@
              (when image
                (load-input! state (.-path image)))))))
 
+(defn- chooser-icon-button
+  "Big vertical Win95 button used in the Open chooser sheet — icon on top,
+   label below. Centered in a fixed-size frame so the two source options
+   line up evenly."
+  [icon label on-tap]
+  (m/Semantics
+    .button true
+    .label label
+    .child (f95/Button95
+             .onTap on-tap
+             .height 110.0
+             .child (m/Padding
+                      .padding (m.EdgeInsets/symmetric .horizontal 8.0 .vertical 10.0)
+                      .child (m/Column
+                               .mainAxisAlignment m.MainAxisAlignment/center
+                               .children
+                               [(m/Icon icon .size 36.0 .color f95.Flutter95/black)
+                                (m/SizedBox .height 8.0)
+                                (m/Text label .style f95.Flutter95/textStyle)])))))
+
+(defn- chooser-sheet-body [^m/BuildContext inner-ctx state]
+  (m/Container
+    .padding (m.EdgeInsets/all 8.0)
+    .color f95.Flutter95/background
+    .child
+    (f95/Elevation95
+      .type f95.Elevation95Type/up
+      .child
+      (m/Padding
+        .padding (m.EdgeInsets/all 12.0)
+        .child (m/Column
+                 .crossAxisAlignment m.CrossAxisAlignment/stretch
+                 .mainAxisSize m.MainAxisSize/min
+                 .children
+                 [(header-row #(nav/pop inner-ctx) "Pick an image")
+                  (m/SizedBox .height 12.0)
+                  (m/Row
+                    .children
+                    [(m/Expanded
+                       .child (chooser-icon-button
+                                m.Icons/photo_library "Photos"
+                                (fn []
+                                  (nav/pop inner-ctx)
+                                  (pick-from-photos! state))))
+                     (m/SizedBox .width 12.0)
+                     (m/Expanded
+                       .child (chooser-icon-button
+                                m.Icons/folder_open "Files"
+                                (fn []
+                                  (nav/pop inner-ctx)
+                                  (pick-from-files! state))))])])))))
+
 (defn- open-image!
-  "Top-level Open action — surfaces a Win95 modal asking the user whether
-   they want to pick from Photos or Files. Replaces the older single-shot
-   file picker so iOS users can reach their Photos library."
-  [state]
-  (swap! state assoc :modal {:kind :open-chooser}))
+  "Top-level Open action — surfaces a Win95 bottom sheet with Photos and
+   Files icon buttons. Matches the settings-sheet pattern so the chooser
+   feels consistent with the rest of the chrome."
+  [^m/BuildContext ctx state]
+  (fbs.FamilyModalSheet/show
+    .context ctx
+    .contentBackgroundColor f95.Flutter95/background
+    .mainContentBorderRadius m.BorderRadius/zero
+    .showDragHandle false
+    .builder (fn [^m/BuildContext inner-ctx]
+               (chooser-sheet-body inner-ctx state))))
 
 (defn- share-output! [state]
   (when-let [output (:output-path @state)]
@@ -277,21 +335,23 @@
 (def ^:private field-gap (m/SizedBox .height 10.0))
 
 (defn- header-row
-  "Sticky header at the top of the config panel. `close-fn` (when non-nil)
-   renders a Win95 close button at the right — used by the phone bottom
-   sheet, where there's no system chrome to dismiss the sheet with."
-  [close-fn]
-  (m/Row
-    .mainAxisAlignment m.MainAxisAlignment/spaceBetween
-    .crossAxisAlignment m.CrossAxisAlignment/center
-    .children
-    [(m/Text "Conversion settings"
-             .style (m/TextStyle
-                      .inherit false
-                      .fontSize 14.0
-                      .fontWeight m.FontWeight/bold
-                      .color f95.Flutter95/black
-                      .decoration m.TextDecoration/none))
+  "Sticky header at the top of a bottom-sheet panel. `close-fn` (when
+   non-nil) renders a Win95 close button at the right — used by sheets,
+   where there's no system chrome to dismiss with."
+  ([close-fn]
+   (header-row close-fn "Conversion settings"))
+  ([close-fn title]
+   (m/Row
+     .mainAxisAlignment m.MainAxisAlignment/spaceBetween
+     .crossAxisAlignment m.CrossAxisAlignment/center
+     .children
+     [(m/Text title
+              .style (m/TextStyle
+                       .inherit false
+                       .fontSize 14.0
+                       .fontWeight m.FontWeight/bold
+                       .color f95.Flutter95/black
+                       .decoration m.TextDecoration/none))
      (if close-fn
        (m/Semantics
          .button true
@@ -305,7 +365,7 @@
                                           .size 16.0
                                           .color f95.Flutter95/black
                                           .semanticLabel "Close"))))
-       (m.SizedBox/shrink))]))
+       (m.SizedBox/shrink))])))
 
 (defn- apply-button
   "Big Win95 button — explicit 'Apply' action on phone (auto-convert is
@@ -426,8 +486,8 @@
 (defn- settings-button [^m/BuildContext ctx state]
   (btn/icon-button m.Icons/tune "Settings" #(open-settings-sheet ctx state)))
 
-(defn- open-button [state]
-  (btn/icon-button m.Icons/folder_open "Open" #(open-image! state)))
+(defn- open-button [^m/BuildContext ctx state]
+  (btn/icon-button m.Icons/folder_open "Open" #(open-image! ctx state)))
 
 (defn- status-bar [s]
   (f95/Elevation95
@@ -472,20 +532,6 @@
                  {:label "Print"  :primary? true :on-tap #(do-print! state)}]
        :on-dismiss #(dismiss-modal! state)})
 
-    :open-chooser
-    (modal/modal
-      {:title "Pick an image"
-       :body  (modal-body-text "Open from Photos or Files?")
-       :actions [{:label "Cancel" :on-tap #(dismiss-modal! state)}
-                 {:label "Photos" :on-tap (fn []
-                                            (dismiss-modal! state)
-                                            (pick-from-photos! state))}
-                 {:label "Files"  :primary? true
-                  :on-tap (fn []
-                            (dismiss-modal! state)
-                            (pick-from-files! state))}]
-       :on-dismiss #(dismiss-modal! state)})
-
     (m.SizedBox/shrink)))
 
 ;; --- UI: phone layout (vertical previews + bottom sheet for settings) ------
@@ -505,22 +551,22 @@
       .children
       [(m/Column
          .children
-         [(preview/preview-tile "Original"  (:input-path s)  #(open-image! state))
-          (preview/preview-tile "Converted" (:output-path s) nil)
-          (m/Container
-            .padding (m.EdgeInsets/symmetric .horizontal 8.0 .vertical 6.0)
+         [(preview/preview-tile "Original"  (:input-path s)  #(open-image! ctx state))
+          (preview/preview-tile "Converted" (:output-path s) nil
+                                (stat/big-number (:toner-saved s) "%" "toner saved"
+                                                 (when-let [am (:auto-chosen-mode s)]
+                                                   (str "auto · " am))))
+          (m/ColoredBox
             .color f95.Flutter95/background
-            .child (m/Row
-                     .children
-                     [(stat/big-number (:toner-saved s) "%" "toner saved"
-                                       (when-let [am (:auto-chosen-mode s)]
-                                         (str "auto · " am)))
-                      (m/Expanded .child (m.SizedBox/shrink))
-                      (settings-button ctx state)
-                      (m/SizedBox .width 6.0)
-                      (save-button s state)
-                      (m/SizedBox .width 6.0)
-                      (print-button s state)]))
+            .child (m/Padding
+                     .padding (m.EdgeInsets/symmetric .horizontal 8.0 .vertical 6.0)
+                     .child (m/Row
+                              .children
+                              [(settings-button ctx state)
+                               (m/Expanded .child (m.SizedBox/shrink))
+                               (save-button s state)
+                               (m/SizedBox .width 6.0)
+                               (print-button s state)])))
           (status-bar s)])
        (render-modal s state)])))
 
@@ -570,7 +616,7 @@
               (m/SizedBox .width 6.0)
               (save-button s state)])))
 
-(defn- ipad-landscape-body [^m/BuildContext _ s state]
+(defn- ipad-landscape-body [^m/BuildContext ctx s state]
   (f/widget
     :managed [*config-open (atom true) :dispose nil :refresh-on :never]
     :watch [config-open? *config-open]
@@ -592,7 +638,7 @@
                             .children
                             [(m/Row
                                .children
-                               [(preview/preview-tile "Original"  (:input-path s)  #(open-image! state))
+                               [(preview/preview-tile "Original"  (:input-path s)  #(open-image! ctx state))
                                 (preview/preview-tile "Converted" (:output-path s) nil)])
                              (m/Positioned
                                .top 16.0
@@ -629,7 +675,7 @@
    The top panel uses AnimatedSize (vs AnimatedContainer with a fixed
    height) so it auto-fits the config-panel's intrinsic Column height —
    no magic constant to keep in sync when controls are added or removed."
-  [^m/BuildContext _ s state]
+  [^m/BuildContext ctx s state]
   (f/widget
     :managed [*config-open (atom false) :dispose nil :refresh-on :never]
     :watch [config-open? *config-open]
@@ -655,7 +701,7 @@
                 [(m/Row
                    .crossAxisAlignment m.CrossAxisAlignment/stretch
                    .children
-                   [(preview/preview-tile "Original"  (:input-path s)  #(open-image! state))
+                   [(preview/preview-tile "Original"  (:input-path s)  #(open-image! ctx state))
                     (preview/preview-tile "Converted" (:output-path s) nil)])
                  (m/Positioned
                    .top 16.0
@@ -704,7 +750,8 @@
                    .actions
                    [(f95/Item95
                       .label "Open"
-                      .onTap (fn [_] (open-image! state)))])
+                      .onTap (fn [^m/BuildContext ctx]
+                               (open-image! ctx state)))])
         .body (body s state)))))
 
 (defn main []

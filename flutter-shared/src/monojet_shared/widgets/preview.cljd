@@ -31,28 +31,44 @@
 
 (defn preview-tile
   "A captioned, inset (Elevation95 down) tile that displays an image at `path`.
-   `on-tap` (optional) makes the whole frame clickable; we forward to a
-   Semantics widget so screen-reader users know it's actionable."
-  [label path on-tap]
-  (m/Expanded
-    .child (m/Padding
-             .padding (m.EdgeInsets/all 12.0)
-             .child (m/Column
-                      .crossAxisAlignment m.CrossAxisAlignment/start
-                      .children
-                      [(m/Padding
-                         .padding (m.EdgeInsets/only .bottom 6.0)
-                         .child (m/Text label .style f95.Flutter95/textStyle))
-                       (m/Expanded
-                         .child (m/Semantics
-                                  .button (some? on-tap)
-                                  .label (if on-tap
-                                           (str label " preview, tap to pick a file")
-                                           (str label " preview"))
-                                  .child (m/GestureDetector
-                                           .onTap on-tap
-                                           .child (f95/Elevation95
-                                                    .type f95.Elevation95Type/down
-                                                    .child (m/Container
-                                                             .color f95.Flutter95/white
-                                                             .child (image-or-placeholder label path))))))]))))
+   `on-tap` (optional) makes the whole frame clickable.
+   `overlay` (optional) is a widget that floats over the top-right corner of
+   the image area — used e.g. to anchor the toner-saved stat over the
+   Converted preview."
+  ([label path on-tap]
+   (preview-tile label path on-tap nil))
+  ([label path on-tap overlay]
+   (m/Expanded
+     .child (m/Padding
+              .padding (m.EdgeInsets/all 12.0)
+              .child (m/Column
+                       .crossAxisAlignment m.CrossAxisAlignment/start
+                       .children
+                       [(m/Padding
+                          .padding (m.EdgeInsets/only .bottom 6.0)
+                          .child (m/Text label .style f95.Flutter95/textStyle))
+                        (m/Expanded
+                          .child (m/Stack
+                                   ;; StackFit.expand sizes the Stack to its parent's constraints
+                                   ;; and forces non-positioned children (the image tile) to fill
+                                   ;; those bounds. Without it the Stack would collapse to its
+                                   ;; non-positioned children's intrinsic size (SizedBox.shrink
+                                   ;; when there's no overlay → 0×0), which would make the image
+                                   ;; render invisibly small.
+                                   .fit m.StackFit/expand
+                                   .children
+                                   [(m/Semantics
+                                      .button (some? on-tap)
+                                      .label (if on-tap
+                                               (str label " preview, tap to pick a file")
+                                               (str label " preview"))
+                                      .child (m/GestureDetector
+                                               .onTap on-tap
+                                               .child (f95/Elevation95
+                                                        .type f95.Elevation95Type/down
+                                                        .child (m/ColoredBox
+                                                                 .color f95.Flutter95/white
+                                                                 .child (image-or-placeholder label path)))))
+                                    (if overlay
+                                      (m/Positioned .top 8.0 .right 8.0 .child overlay)
+                                      (m.SizedBox/shrink))]))])))))
