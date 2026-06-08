@@ -10,7 +10,8 @@
    `convert!` is synchronous; the UI wraps it in `compute()` to keep the
    render thread responsive."
   (:require ["package:image/image.dart" :as img]
-            ["dart:io" :as io]))
+            ["dart:io" :as io]
+            ["dart:typed_data" :as td]))
 
 ;; --- Constants --------------------------------------------------------------
 
@@ -120,23 +121,71 @@
               out (if (>= (.-r p) thr) 255.0 0.0)]
           (set-gray! p out))))))
 
+(defn- box-blur-mean
+  "Per-pixel local arithmetic mean of `image`'s .r channel over a
+   (2*radius+1)² uniform window. Separable two-pass algorithm with
+   prefix sums — O(w*h) regardless of window size.
+
+   Why not `image.convolution`? It's hardcoded to a 3×3 kernel regardless
+   of how many filter weights you pass (see image-4.5.4's
+   filter/convolution.dart). And `gaussianBlur` weights the center pixel
+   too heavily for LAT to find contrast on continuous-tone photos.
+
+   Returns a Float32List indexed by `x + y*w`."
+  ^td/Float32List [^img/Image image ^int radius]
+  (let [w (.-width image)
+        h (.-height image)
+        n (* w h)
+        gray (td/Float32List. n)
+        hor  (td/Float32List. n)
+        out  (td/Float32List. n)]
+    ;; Snapshot .r into a contiguous buffer.
+    (dotimes [y h]
+      (let [base (* y w)]
+        (dotimes [x w]
+          (aset gray (+ base x) (.-r (.getPixel image x y))))))
+    ;; Horizontal pass: row prefix sums → windowed mean per pixel.
+    (dotimes [y h]
+      (let [base   (* y w)
+            prefix (td/Float64List. (inc w))]
+        (dotimes [x w]
+          (aset prefix (inc x) (+ (aget prefix x) (aget gray (+ base x)))))
+        (dotimes [x w]
+          (let [lo  (max 0 (- x radius))
+                hi  (min w (inc (+ x radius)))
+                cnt (- hi lo)
+                sum (- (aget prefix hi) (aget prefix lo))]
+            (aset hor (+ base x) (/ sum cnt))))))
+    ;; Vertical pass: column prefix sums → windowed mean per pixel.
+    (dotimes [x w]
+      (let [prefix (td/Float64List. (inc h))]
+        (dotimes [y h]
+          (aset prefix (inc y) (+ (aget prefix y) (aget hor (+ x (* y w))))))
+        (dotimes [y h]
+          (let [lo  (max 0 (- y radius))
+                hi  (min h (inc (+ y radius)))
+                cnt (- hi lo)
+                sum (- (aget prefix hi) (aget prefix lo))]
+            (aset out (+ x (* y w)) (/ sum cnt))))))
+    out))
+
 (defn- apply-text-mode!
   "Local Adaptive Threshold — match desktop's `magick -lat 20x20-10%`.
-   `gaussianBlur radius 10` approximates the 20-window mean; subtract a small
-   bias so flat regions tilt toward white."
+   Compares each pixel to a uniform 21×21 (radius 10) local mean and
+   binarizes around `mean - 10% of range`."
   [^img/Image image]
-  (let [^img/Image blurred (img/gaussianBlur image .radius 10)
-        bias 25.0
-        w    (.-width image)
-        h    (.-height image)]
+  (let [w     (.-width image)
+        h     (.-height image)
+        means (box-blur-mean image 10)
+        bias  25.0]
     (dotimes [y h]
-      (dotimes [x w]
-        (let [^img/Pixel src (.getPixel image   x y)
-              ^img/Pixel ref (.getPixel blurred x y)
-              v      (.-r src)
-              local  (- (.-r ref) bias)
-              out    (if (>= v local) 255.0 0.0)]
-          (set-gray! src out))))))
+      (let [base (* y w)]
+        (dotimes [x w]
+          (let [^img/Pixel p (.getPixel image x y)
+                v     (.-r p)
+                local (- (aget means (+ base x)) bias)
+                out   (if (>= v local) 255.0 0.0)]
+            (set-gray! p out)))))))
 
 (defn- apply-halftone-mode!
   [^img/Image image]

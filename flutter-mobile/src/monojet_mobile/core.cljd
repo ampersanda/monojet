@@ -79,8 +79,16 @@
 
 (defn- run-convert-auto!
   "Run engine sequentially across `auto-mode-pool`. Picks the highest-saved
-   result. Sequential (not parallel) because pure-Dart processing is heavy and
-   sharing CPU across N concurrent isolates would just thrash."
+   result among runs that still have meaningful content (output mean
+   luminance ≤ 0.97 — i.e. the page isn't blank). Sequential (not parallel)
+   because pure-Dart processing is heavy and sharing CPU across N concurrent
+   isolates would just thrash.
+
+   The 0.97 cutoff filters out 'text mode on a smooth photo' degenerate
+   cases — those save the most toner trivially (by going all-white), but
+   they erase the image. If every mode produced a near-blank output we
+   fall back to the highest-saved result anyway so something at least
+   renders."
   [state input-path]
   (let [base-cfg (:config @state)
         modes    st/auto-mode-pool
@@ -96,9 +104,11 @@
                                 (assoc r :mode m :out out))
                               (catch Object _ nil))))
                         modes)
-                  ok (filter some? results)]
-              (when (seq ok)
-                (apply max-key :saved ok)))))]
+                  ok          (filter some? results)
+                  meaningful  (filter #(< (:out-mean %) 0.97) ok)
+                  candidates  (if (seq meaningful) meaningful ok)]
+              (when (seq candidates)
+                (apply max-key :saved candidates)))))]
     (.then fut
            (fn [winner]
              (if winner
