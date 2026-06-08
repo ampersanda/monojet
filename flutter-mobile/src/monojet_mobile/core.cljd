@@ -1,22 +1,480 @@
 (ns monojet-mobile.core
-  "Entry point for the mobile build. Phase 2 scaffold — full UI lands in
-   Phase 4, full conversion engine lands in Phase 3."
+  "Top-level UI for the mobile build. Mirrors flutter-desktop's core.cljd
+   where possible — preview tiles, stat card, config-panel, modals — but
+   diverges where the platform demands it:
+
+   * No drag-and-drop. Tap the empty Original tile or the Open toolbar
+     button to launch UIDocumentPicker.
+   * No subprocess. monojet-mobile.engine runs the conversion pipeline
+     in-process via Future.microtask.
+   * No 'Save as…'. Save routes through the iOS Share Sheet
+     (share_plus → UIActivityViewController).
+   * No `lp` print. AirPrint via the `printing` package — the raster
+     output is wrapped in a single-page PDF on the fly.
+   * No updater. App Store handles updates.
+
+   Layout switches at 600 dp logical pixels: phone stacks previews
+   vertically with a Win95-styled bottom sheet for settings; iPad keeps
+   the desktop-style side-by-side previews + persistent sidebar."
   (:require ["package:flutter/material.dart" :as m]
             ["package:flutter95/flutter95.dart" :as f95]
+            ["package:file_picker/file_picker.dart" :as fp]
+            ["package:path/path.dart" :as p]
+            ["package:share_plus/share_plus.dart" :as sp]
+            ["package:printing/printing.dart" :as pr]
+            ["package:pdf/pdf.dart" :as pdf]
+            ["package:pdf/widgets.dart" :as pw]
+            ["package:family_bottom_sheet/family_bottom_sheet.dart" :as fbs]
+            ["package:package_info_plus/package_info_plus.dart" :as pkg]
+            ["dart:io" :as io]
+            ["dart:async" :as async]
             [monojet-mobile.state :as st]
             [monojet-mobile.engine :as engine]
+            [monojet-shared.widgets.form :as form]
+            [monojet-shared.widgets.buttons :as btn]
+            [monojet-shared.widgets.preview :as preview]
+            [monojet-shared.widgets.stat :as stat]
+            [monojet-shared.widgets.modal :as modal]
             [cljd.flutter :as f]))
 
-(defn- placeholder-body []
-  (m/Center
-    .child (m/Padding
-             .padding (m.EdgeInsets/all 20.0)
-             .child (m/Text "monojet mobile — scaffold"
+;; --- Helpers ----------------------------------------------------------------
+
+(defn- image-file? [path]
+  (some-> path p/extension .toLowerCase st/image-exts boolean))
+
+(defn- temp-dir-path ^String []
+  (.-path io.Directory/systemTemp))
+
+(defn- output-path-for [input-path]
+  (let [base  (p/basenameWithoutExtension input-path)
+        ext   (or (p/extension input-path) ".png")
+        stamp (-> (DateTime/now) .-millisecondsSinceEpoch str)]
+    (p/join (temp-dir-path) (str "bw-" base "-" stamp ext))))
+
+(defn- pct [^double v]
+  (str (.toStringAsFixed v 1) "%"))
+
+;; --- Conversion plumbing ----------------------------------------------------
+
+(declare maybe-check-invert!)
+
+(defn- run-convert-once!
+  "Run the engine for the current config and a fresh output path. Returns a
+   Future of {:ok? :saved :out :error}."
+  [state config-override]
+  (let [{:keys [input-path config]} @state
+        cfg (merge config config-override)
+        out (output-path-for input-path)]
+    (.then (async/Future.microtask
+             (fn []
+               (try
+                 (let [r (engine/convert! input-path out cfg)]
+                   {:ok? true :saved (:saved r) :out out :error nil})
+                 (catch Object e
+                   {:ok? false :saved nil :out out :error (str e)}))))
+           (fn [r] r))))
+
+(defn- run-convert-auto!
+  "Run engine sequentially across `auto-mode-pool`. Picks the highest-saved
+   result. Sequential (not parallel) because pure-Dart processing is heavy and
+   sharing CPU across N concurrent isolates would just thrash."
+  [state input-path]
+  (let [base-cfg (:config @state)
+        modes    st/auto-mode-pool
+        ^async/Future fut
+        (async/Future.microtask
+          (fn []
+            (let [results
+                  (mapv (fn [m]
+                          (let [out (output-path-for input-path)]
+                            (try
+                              (let [r (engine/convert! input-path out
+                                                       (assoc base-cfg :mode m))]
+                                (assoc r :mode m :out out))
+                              (catch Object _ nil))))
+                        modes)
+                  ok (filter some? results)]
+              (when (seq ok)
+                (apply max-key :saved ok)))))]
+    (.then fut
+           (fn [winner]
+             (if winner
+               (swap! state assoc
+                      :converting? false
+                      :output-path (:out winner)
+                      :toner-saved (* 100.0 (:saved winner))
+                      :auto-chosen-mode (:mode winner)
+                      :status (str "Done · auto chose " (:mode winner)))
+               (swap! state assoc
+                      :converting? false
+                      :error "All auto modes failed."
+                      :status "Conversion failed."))))))
+
+(defn- run-convert!
+  "Top-level dispatch. Auto fans out across the mobile mode pool; anything
+   else runs a single pass, then a silent invert check."
+  [state]
+  (let [{:keys [input-path config]} @state]
+    (swap! state assoc :converting? true :error nil :auto-chosen-mode nil
+           :status (str "Converting " (p/basename input-path) " ..."))
+    (if (= st/auto-mode (:mode config))
+      (run-convert-auto! state input-path)
+      (.then (run-convert-once! state {})
+             (fn [{:keys [ok? saved out error]}]
+               (if ok?
+                 (do (swap! state assoc
+                            :converting? false
+                            :output-path out
+                            :toner-saved (* 100.0 saved)
+                            :status (str "Done → " (p/basename out)))
+                     (maybe-check-invert! state saved))
+                 (swap! state assoc
+                        :converting? false
+                        :error error
+                        :status "Conversion failed.")))))))
+
+(defn- maybe-check-invert!
+  "After a non-inverted convert, silently run an inverted variant. If it
+   would save ≥ 5 pp more toner, stage an :invert modal."
+  [state base-saved]
+  (let [{:keys [config invert-suggestion-checked? input-path]} @state]
+    (when (and (not invert-suggestion-checked?)
+               (not (:invert? config))
+               (not (:auto-invert? config))
+               base-saved input-path)
+      (swap! state assoc :invert-suggestion-checked? true)
+      (.then (run-convert-once! state {:invert? true})
+             (fn [{:keys [ok? saved]}]
+               (when (and ok? saved (> saved (+ base-saved 0.05)))
+                 (swap! state assoc
+                        :modal {:kind    :invert
+                                :payload {:without (* 100.0 base-saved)
+                                          :with    (* 100.0 saved)}})))))))
+
+(defn- accept-invert! [state]
+  (swap! state #(-> %
+                    (assoc-in [:config :invert?] true)
+                    (assoc :modal nil)))
+  (run-convert! state))
+
+(defn- dismiss-modal! [state]
+  (swap! state assoc :modal nil))
+
+(defonce ^:private *debounce-timer (atom nil))
+
+(defn- schedule-convert!
+  "Debounced re-convert. Cancels any pending fire and schedules a new one in
+   `delay-ms`. No-ops if no input or a conversion is already in flight."
+  [state delay-ms]
+  (when-let [^async/Timer t @*debounce-timer]
+    (.cancel t))
+  (reset! *debounce-timer
+          (async/Timer. (Duration .milliseconds delay-ms)
+                        (fn []
+                          (reset! *debounce-timer nil)
+                          (when (and (:input-path @state)
+                                     (not (:converting? @state)))
+                            (run-convert! state))))))
+
+;; --- File pick / share / print ---------------------------------------------
+
+(defn- pick-file! [state]
+  (let [^async/Future fut
+        (.pickFiles fp/FilePicker.platform
+                    .dialogTitle "Pick an image"
+                    .type fp.FileType/custom
+                    .allowedExtensions
+                    #dart ^String ["png" "jpg" "jpeg" "bmp" "tif" "tiff" "webp" "gif"])]
+    (.then fut
+           (fn [^fp/FilePickerResult? result]
+             (when result
+               (when-let [^fp/PlatformFile pf (-> result .-files first)]
+                 (when-let [path (.-path pf)]
+                   (if (image-file? path)
+                     (do (swap! state assoc
+                                :input-path path
+                                :output-path nil
+                                :toner-saved nil
+                                :auto-chosen-mode nil
+                                :invert-suggestion-checked? false
+                                :modal nil
+                                :error nil
+                                :status (str "Loaded " (p/basename path)
+                                             ". Converting…"))
+                         (run-convert! state))
+                     (swap! state assoc
+                            :error (str "Unsupported file: " (p/basename path))
+                            :status "Pick a PNG, JPG, or other supported image.")))))))))
+
+(defn- share-output! [state]
+  (when-let [output (:output-path @state)]
+    (sp.Share/shareXFiles
+      #dart ^sp/XFile [(sp/XFile. output)]
+      .subject "monojet — laser-printer-ready")))
+
+(defn- do-print! [state]
+  (when-let [output (:output-path @state)]
+    (swap! state assoc
+           :modal nil
+           :status (str "Sending " (p/basename output) " to printer…")
+           :error nil)
+    (let [bytes (.readAsBytesSync (io/File. output))]
+      (.then (pr.Printing/layoutPdf
+               .onLayout
+               (fn [^pdf/PdfPageFormat fmt]
+                 (let [doc (pw/Document.)]
+                   (.addPage doc
+                             (pw/Page.
+                               .pageFormat fmt
+                               .build (fn [_]
+                                        (pw/Center
+                                          .child (pw/Image.
+                                                   (pw/MemoryImage. bytes))))))
+                   (.save doc))))
+             (fn [success]
+               (if success
+                 (swap! state assoc :status "Sent to printer.")
+                 (swap! state assoc :status "Print canceled.")))))))
+
+(defn- print! [state]
+  "Open the print-confirm modal; the actual layoutPdf call fires on confirm."
+  (when (:output-path @state)
+    (swap! state assoc :modal {:kind :print-confirm})))
+
+;; --- Config panel (shared between sidebar + bottom sheet) ------------------
+
+(defn- mode-popup [value on-change]
+  (form/enum-popup "Mode" value st/modes on-change))
+
+(defn- toner-popup [value on-change]
+  (form/enum-popup "Toner saving" value st/toner-saving-options on-change))
+
+(def ^:private field-gap (m/SizedBox .height 10.0))
+
+(defn- config-panel [state]
+  (f/widget
+    :let [{:keys [config]} @state
+          update-cfg! (fn [k v]
+                        (swap! state assoc-in [:config k] v)
+                        (schedule-convert! state 400))]
+    (m/Container
+      .padding (m.EdgeInsets/all 8.0)
+      .color f95.Flutter95/background
+      .child
+      (f95/Elevation95
+        .type f95.Elevation95Type/up
+        .child
+        (m/Padding
+          .padding (m.EdgeInsets/all 12.0)
+          .child
+          (m/SingleChildScrollView
+            .child
+            (m/Column
+              .crossAxisAlignment m.CrossAxisAlignment/stretch
+              .mainAxisSize m.MainAxisSize/min
+              .children
+              [(m/Text "Conversion settings"
+                       .style (m/TextStyle
+                                .inherit false
+                                .fontSize 14.0
+                                .fontWeight m.FontWeight/bold
+                                .color f95.Flutter95/black
+                                .decoration m.TextDecoration/none))
+               (m/SizedBox .height 12.0)
+               (mode-popup (:mode config) #(update-cfg! :mode %))
+               field-gap
+               (toner-popup (:toner-saving config) #(update-cfg! :toner-saving %))
+               field-gap
+               (form/slider-field "Threshold" (:threshold config) 0 100 50
+                                  #(update-cfg! :threshold %))
+               field-gap
+               (form/slider-field "Brightness" (:brightness config) -100 100 0
+                                  #(update-cfg! :brightness %))
+               field-gap
+               (form/slider-field "Contrast" (:contrast config) -100 100 0
+                                  #(update-cfg! :contrast %))
+               field-gap
+               (form/checkbox-row "auto-invert" (:auto-invert? config)
+                                  #(update-cfg! :auto-invert? (boolean %)))
+               (form/checkbox-row "force invert" (:invert? config)
+                                  #(update-cfg! :invert? (boolean %)))])))))))
+
+(defn- open-settings-sheet [^m/BuildContext ctx state]
+  (fbs.FamilyModalSheet/show
+    .context ctx
+    .contentBackgroundColor f95.Flutter95/background
+    .isScrollControlled true
+    .showDragHandle true
+    .builder (fn [^m/BuildContext _] (config-panel state))))
+
+;; --- UI: shared bits --------------------------------------------------------
+
+(defn- save-button [s state]
+  (btn/icon-button m.Icons/ios_share
+                   "Save"
+                   (when (:output-path s) #(share-output! state))))
+
+(defn- print-button [s state]
+  (btn/icon-button m.Icons/print
+                   "Print"
+                   (when (:output-path s) #(print! state))))
+
+(defn- settings-button [^m/BuildContext ctx state]
+  (btn/icon-button m.Icons/tune "Settings" #(open-settings-sheet ctx state)))
+
+(defn- open-button [state]
+  (btn/icon-button m.Icons/folder_open "Open" #(pick-file! state)))
+
+(defn- status-bar [s]
+  (f95/Elevation95
+    .type f95.Elevation95Type/down
+    .child (m/Container
+             .padding (m.EdgeInsets/symmetric .horizontal 8.0 .vertical 4.0)
+             .color f95.Flutter95/background
+             .child (m/Text (or (:error s) (:status s))
+                            .maxLines 2
                             .style f95.Flutter95/textStyle))))
+
+(defn- modal-body-text [text]
+  (m/Text text
+          .style (m/TextStyle
+                   .inherit false
+                   .fontSize 13.0
+                   .color f95.Flutter95/black
+                   .decoration m.TextDecoration/none)))
+
+(defn- render-modal [s state]
+  (case (some-> s :modal :kind)
+    :invert
+    (let [{:keys [without with]} (-> s :modal :payload)]
+      (modal/modal
+        {:title "Inverting would save more toner"
+         :body  (modal-body-text
+                  (str "Without invert: " (pct without) " saved\n"
+                       "With invert:    " (pct with)    " saved\n\n"
+                       "Likely a dark-background source — switch to invert?"))
+         :actions [{:label "Keep current" :on-tap #(dismiss-modal! state)}
+                   {:label "Use invert"   :primary? true
+                    :on-tap #(accept-invert! state)}]
+         :on-dismiss #(dismiss-modal! state)}))
+
+    :print-confirm
+    (modal/modal
+      {:title "Send to printer?"
+       :body  (modal-body-text
+                (str "Print " (some-> (:output-path s) p/basename)
+                     " to a nearby AirPrint printer?"))
+       :actions [{:label "Cancel" :on-tap #(dismiss-modal! state)}
+                 {:label "Print"  :primary? true :on-tap #(do-print! state)}]
+       :on-dismiss #(dismiss-modal! state)})
+
+    (m.SizedBox/shrink)))
+
+;; --- UI: phone layout (vertical previews + bottom sheet for settings) ------
+
+(defn- phone-body [^m/BuildContext ctx s state]
+  (m/SafeArea
+    .child
+    (m/Stack
+      .children
+      [(m/Column
+         .children
+         [(preview/preview-tile "Original"  (:input-path s)  #(pick-file! state))
+          (preview/preview-tile "Converted" (:output-path s) nil)
+          (m/Container
+            .padding (m.EdgeInsets/symmetric .horizontal 8.0 .vertical 6.0)
+            .color f95.Flutter95/background
+            .child (m/Row
+                     .children
+                     [(stat/big-number (:toner-saved s) "%" "toner saved"
+                                       (when-let [am (:auto-chosen-mode s)]
+                                         (str "auto · " am)))
+                      (m/Expanded .child (m.SizedBox/shrink))
+                      (settings-button ctx state)
+                      (m/SizedBox .width 6.0)
+                      (save-button s state)
+                      (m/SizedBox .width 6.0)
+                      (print-button s state)]))
+          (status-bar s)])
+       (render-modal s state)])))
+
+;; --- UI: iPad layout (side-by-side previews + persistent sidebar) ----------
+
+(def ^:private sidebar-width 320.0)
+
+(defn- ipad-body [^m/BuildContext _ s state]
+  (f/widget
+    :managed [*config-open (atom true) :dispose nil :refresh-on :never]
+    :watch [config-open? *config-open]
+    (m/Container
+      .color f95.Flutter95/background
+      .child
+      (m/Stack
+        .children
+        [(m/Column
+           .children
+           [(m/Expanded
+              .child
+              (m/Row
+                .crossAxisAlignment m.CrossAxisAlignment/stretch
+                .children
+                [(m/Expanded
+                   .child (m/Stack
+                            .children
+                            [(m/Row
+                               .children
+                               [(preview/preview-tile "Original"  (:input-path s)  #(pick-file! state))
+                                (preview/preview-tile "Converted" (:output-path s) nil)])
+                             (m/Positioned
+                               .top 16.0
+                               .right 16.0
+                               .child (m/Column
+                                        .crossAxisAlignment m.CrossAxisAlignment/end
+                                        .mainAxisSize m.MainAxisSize/min
+                                        .children
+                                        [(btn/chevron-toggle config-open?
+                                                             #(swap! *config-open not))
+                                         (m/SizedBox .height 10.0)
+                                         (stat/big-number (:toner-saved s) "%" "toner saved"
+                                                          (when-let [am (:auto-chosen-mode s)]
+                                                            (str "auto · " am)))]))]))
+                 (m/AnimatedContainer
+                   .duration (Duration .milliseconds 200)
+                   .curve m.Curves/easeInOut
+                   .width (if config-open? sidebar-width 0.0)
+                   .clipBehavior m.Clip/hardEdge
+                   .decoration (m/BoxDecoration .color f95.Flutter95/background)
+                   .child (m/OverflowBox
+                            .minWidth sidebar-width
+                            .maxWidth sidebar-width
+                            .alignment m.Alignment/topLeft
+                            .child (config-panel state)))]))
+            (m/Container
+              .padding (m.EdgeInsets/all 8.0)
+              .color f95.Flutter95/background
+              .child (m/Row
+                       .children
+                       [(m/Expanded .child (status-bar s))
+                        (m/SizedBox .width 8.0)
+                        (print-button s state)
+                        (m/SizedBox .width 6.0)
+                        (save-button s state)]))])
+         (render-modal s state)]))))
+
+;; --- UI: top-level switch --------------------------------------------------
+
+(defn- body [s state]
+  (m/LayoutBuilder
+    .builder
+    (fn [^m/BuildContext ctx ^m/BoxConstraints c]
+      (if (< (.-maxWidth c) 600.0)
+        (phone-body ctx s state)
+        (ipad-body  ctx s state)))))
 
 (defn app []
   (f/widget
     :watch [s st/app-state]
+    :let [state st/app-state]
     (m/MaterialApp
       .title "monojet"
       .debugShowCheckedModeBanner false
@@ -27,7 +485,15 @@
       .home
       (f95/Scaffold95
         .title (if-let [v (:app-version s)] (str "monojet v" v) "monojet")
-        .body (placeholder-body)))))
+        .toolbar (f95/Toolbar95
+                   .actions
+                   [(f95/Item95
+                      .label "Open"
+                      .onTap (fn [_] (pick-file! state)))])
+        .body (body s state)))))
 
 (defn main []
-  (f/run (app)))
+  (f/run (app))
+  (.then (pkg.PackageInfo/fromPlatform)
+         (fn [^pkg/PackageInfo info]
+           (swap! st/app-state assoc :app-version (.-version info)))))
