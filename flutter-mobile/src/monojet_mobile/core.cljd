@@ -299,12 +299,18 @@
                (form/checkbox-row "force invert" (:invert? config)
                                   #(update-cfg! :invert? (boolean %)))])))))))
 
-(defn- open-settings-sheet [^m/BuildContext ctx state]
+(defn- open-settings-sheet
+  "Open the settings sheet on phone. The flutter95 visual language is sharp
+   90° corners + bevelled edges — override family_bottom_sheet's iOS-default
+   rounded corners + drag-handle pill so the sheet matches the rest of the
+   chrome. config-panel already paints its own Elevation95 frame."
+  [^m/BuildContext ctx state]
   (fbs.FamilyModalSheet/show
     .context ctx
     .contentBackgroundColor f95.Flutter95/background
+    .mainContentBorderRadius m.BorderRadius/zero
     .isScrollControlled true
-    .showDragHandle true
+    .showDragHandle false
     .builder (fn [^m/BuildContext _] (config-panel state))))
 
 ;; --- UI: shared bits --------------------------------------------------------
