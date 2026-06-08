@@ -177,6 +177,47 @@ flutter build macos              # release: produces flutter-desktop/build/macos
 
 The Xcode build phase **Bundle monojet runtime** copies `bb`, `monojet.bb`, `bb.edn`, and `src/` into the .app's `Contents/Resources/monojet/` so the bundle ships the conversion logic. `magick` (and `gs` for PDFs) must still be installed on the target machine — install via `brew install imagemagick ghostscript`. macOS deployment target is 11.0; minimum window size is 880 × 540.
 
+## Mobile app (iOS / iPadOS)
+
+A second Flutter target under `flutter-mobile/` builds an iOS / iPadOS version of monojet. Same flutter95 chrome as the desktop, with a responsive layout: stacked previews on iPhone, side-by-side previews + persistent sidebar on iPad (breakpoint is 600 dp logical pixels).
+
+**The mobile app is not on the App Store yet — building it yourself is the only way to run it for now.** Submission is on the roadmap once the conversion engine has had more real-world tuning.
+
+### Differences from the desktop build
+
+- **Image only.** PDF input / output is not supported on mobile (iOS doesn't ship Ghostscript and shipping a static build would balloon the IPA).
+- **No subprocess.** The conversion pipeline runs in pure Dart via the [brendan-duncan/image](https://pub.dev/packages/image) package — gamma, brightness/contrast, LAT (via Gaussian blur), Floyd–Steinberg, 8×8 Bayer halftone, threshold, gray. Output is 2–5× slower than ImageMagick but stays self-contained, App Store friendly, and offline-only.
+- **Auto-mode is narrower.** Instead of racing every mode, mobile races `text` + `dither` + `halftone` (chosen for highest toner-savings yield on representative inputs).
+- **Open** opens iOS's document picker (UIDocumentPickerViewController) — drag-and-drop is desktop-only.
+- **Save** routes through the iOS Share Sheet, so the converted file lands in Files, Photos, AirDrop, mail, etc.
+- **Print** uses AirPrint. The raster output is wrapped in a single-page PDF on the fly.
+- **No in-app updater.** App Store will handle updates once it's published.
+
+### Build from source
+
+Requirements:
+- Xcode (CLI tools and a recent stable release)
+- Flutter SDK (any recent stable channel)
+- Clojure CLI (`brew install clojure/tools/clojure`)
+- An Apple Developer account if you want to install on a physical device (simulator runs without one)
+
+```bash
+cd flutter-mobile
+flutter pub get
+clojure -M:cljd compile
+
+# Run on a booted iOS simulator:
+flutter run -d <simulator-udid>
+
+# Or build a release .ipa (unsigned — for device install you still need
+# to open ios/Runner.xcworkspace in Xcode and sign with your team):
+flutter build ios --release --no-codesign
+```
+
+Bundle id is `dev.ampersanda.monojet.mobile` (distinct from the desktop's `dev.ampersanda.monojet`).
+
+There is **no CI for mobile** — each build is a manual local run. The intent is to keep CI cost down until the app ships in the store.
+
 ## Project structure
 
 ```
@@ -185,21 +226,32 @@ monojet.bb                        # Entry point for uberscript bundling
 src/monojet/
   core.clj                        # CLI parsing, orchestration, reporting
   imagemagick.clj                 # ImageMagick interop (identify, analyze, convert)
-flutter-desktop/
-  deps.edn                                  # ClojureDart deps + :cljd/opts
-  pubspec.yaml                              # Flutter deps (desktop_drop, file_picker, flutter95, ...)
+flutter-desktop/                            # macOS desktop app (shells out to bb + magick + gs)
+  deps.edn                                  # ClojureDart deps + :cljd/opts + :local/root → flutter-shared
+  pubspec.yaml                              # desktop_drop, file_picker, flutter95, http, …
   src/monojet_desktop/
     core.cljd                               # Layout, subprocess plumbing, modals
     state.cljd                              # Constants + the defonce app-state atom
     updater.cljd                            # GitHub release check + in-place swap
-    widgets/
-      form.cljd                             # labeled-field, num-field, slider-field, …
-      buttons.cljd                          # icon-button, chevron-toggle (a11y-wrapped)
-      preview.cljd                          # tappable image/PDF preview tile
-      stat.cljd                             # big-number stat card
-      modal.cljd                            # reusable centered modal
   lib/main.dart                             # Re-exports the cljd-compiled entry point
   macos/                                    # Flutter macOS scaffold (Xcode project, entitlements, icons)
+flutter-mobile/                             # iOS / iPadOS app (pure-Dart engine, image-only)
+  deps.edn                                  # ClojureDart deps + :cljd/opts + :local/root → flutter-shared
+  pubspec.yaml                              # flutter95, image, file_picker, printing, share_plus, …
+  src/monojet_mobile/
+    core.cljd                               # LayoutBuilder phone/iPad split, picker, share, AirPrint
+    state.cljd                              # Mobile config + state (no subprocess fields, no PDF)
+    engine.cljd                             # Pure-Dart conversion pipeline (alpha-flatten, gamma, LAT, FS, halftone)
+  lib/main.dart                             # Re-exports the cljd-compiled entry point
+  ios/                                      # Flutter iOS scaffold (Xcode project, Info.plist)
+flutter-shared/                             # cljd widget package consumed via :local/root
+  deps.edn
+  src/monojet_shared/widgets/
+    form.cljd                               # labeled-field, num-field, slider-field, …
+    buttons.cljd                            # icon-button, chevron-toggle (a11y-wrapped)
+    preview.cljd                            # tappable image/PDF preview tile
+    stat.cljd                               # big-number stat card
+    modal.cljd                              # reusable centered modal
 ```
 
 ## References
