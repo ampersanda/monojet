@@ -373,7 +373,15 @@
 ;; --- UI: phone layout (vertical previews + bottom sheet for settings) ------
 
 (defn- phone-body [^m/BuildContext ctx s state]
+  ;; SafeArea is intentionally restricted to the bottom (home indicator
+  ;; inset only). Scaffold95 already accounts for the top safe area, and
+  ;; wrapping the whole body in a full SafeArea duplicates that inset and
+  ;; produces a dead gap of ~safeArea.top dp between the toolbar and the
+  ;; first preview tile.
   (m/SafeArea
+    .top false
+    .left false
+    .right false
     .child
     (m/Stack
       .children
