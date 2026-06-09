@@ -153,6 +153,7 @@
                  .tooltip ""
                  .padding (m.EdgeInsets/all 0.0)
                  .position m.PopupMenuPosition/under
+                 .popUpAnimationStyle m.AnimationStyle/noAnimation
                  .color f95.Flutter95/white
                  .surfaceTintColor f95.Flutter95/white
                  .elevation 4.0
