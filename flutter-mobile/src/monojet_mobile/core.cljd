@@ -412,7 +412,13 @@
    (config-panel state {:auto-convert? true :close-fn nil :apply-fn nil}))
   ([state {:keys [auto-convert? close-fn apply-fn]}]
    (f/widget
-     :let [{:keys [config input-path]} @state
+     ;; :watch is required: this widget is hosted inside a separate
+     ;; Navigator route (the FamilyModalSheet) on phone, so the parent
+     ;; layout's state-watch doesn't propagate rebuilds here. Without
+     ;; :watch, dropdowns/sliders update state but the rendered values
+     ;; freeze and the panel feels broken.
+     :watch [s state]
+     :let [{:keys [config input-path]} s
            update-cfg! (fn [k v]
                          (swap! state assoc-in [:config k] v)
                          (when auto-convert?
