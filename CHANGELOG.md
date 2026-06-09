@@ -23,6 +23,12 @@ Version tracks the desktop release so a single tag pins both apps.
 
 - Renamed `flutter/` → `flutter-desktop/` to make room for the sibling mobile target. The Xcode "Bundle monojet runtime" build phase reaches the repo root via `${SRCROOT}/../..`, so the rename doesn't disturb it.
 
+## Desktop [1.2.1]
+
+### Changed
+
+- Dropdown popup re-themed to Win95 — sharp 1 px black border, no rounded corners, no fade animation.
+
 ## Desktop [1.2.0]
 
 ### Added
