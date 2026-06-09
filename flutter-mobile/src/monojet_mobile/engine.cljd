@@ -235,7 +235,7 @@
 
 (defn convert!
   "Convert `in-path` to `out-path` per `config`. Synchronous — the UI calls
-   this inside a `compute()` so it runs on a background isolate.
+   this inside `compute()` so it runs on a background isolate.
 
    `config` shape mirrors `monojet-mobile.state/default-config` (minus the
    mode = \"auto\" sentinel; the auto-mode driver lives in core.cljd and
@@ -268,3 +268,17 @@
         {:in-mean  in-mean
          :out-mean out-mean
          :saved    saved}))))
+
+(defn convert-iso
+  "Top-level wrapper for Flutter's `compute()` — runs `convert!` on a
+   background isolate. cljd's PersistentMap implements Dart's `Map<K,V>`
+   and is sendable across the isolate boundary, so we just thread the
+   Clojure data through.
+
+   Returns the `convert!` result on success or `{:error \"…\"}` on
+   failure — the call site dispatches on `:error`."
+  [args]
+  (try
+    (convert! (:in args) (:out args) (:config args))
+    (catch Object e
+      {:error (str e)})))

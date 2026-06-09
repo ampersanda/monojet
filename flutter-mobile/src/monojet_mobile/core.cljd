@@ -17,6 +17,7 @@
    vertically with a Win95-styled bottom sheet for settings; iPad keeps
    the desktop-style side-by-side previews + persistent sidebar."
   (:require ["package:flutter/material.dart" :as m]
+            ["package:flutter/foundation.dart" :as found]
             ["package:flutter95/flutter95.dart" :as f95]
             ["package:file_picker/file_picker.dart" :as fp]
             ["package:image_picker/image_picker.dart" :as ip]
@@ -62,27 +63,28 @@
 (declare maybe-check-invert!)
 
 (defn- run-convert-once!
-  "Run the engine for the current config and a fresh output path. Returns a
-   Future of {:ok? :saved :out :error}."
+  "Run the engine for the current config and a fresh output path. The
+   conversion runs in a background isolate via flutter's compute() so
+   the UI stays responsive even on large images. Returns a Future of
+   {:ok? :saved :out-mean :out :error}."
   [state config-override]
   (let [{:keys [input-path config]} @state
         cfg (merge config config-override)
         out (output-path-for input-path)]
-    (.then (async/Future.microtask
-             (fn []
-               (try
-                 (let [r (engine/convert! input-path out cfg)]
-                   {:ok? true :saved (:saved r) :out out :error nil})
-                 (catch Object e
-                   {:ok? false :saved nil :out out :error (str e)}))))
-           (fn [r] r))))
+    (.then (found/compute engine/convert-iso
+                          {:in input-path :out out :config cfg})
+           (fn [r]
+             (if (:error r)
+               {:ok? false :saved nil :out-mean nil :out out :error (:error r)}
+               {:ok? true  :saved (:saved r) :out-mean (:out-mean r)
+                :out out :error nil})))))
 
 (defn- run-convert-auto!
-  "Run engine sequentially across `auto-mode-pool`. Picks the highest-saved
-   result among runs that still have meaningful content (output mean
-   luminance ≤ 0.97 — i.e. the page isn't blank). Sequential (not parallel)
-   because pure-Dart processing is heavy and sharing CPU across N concurrent
-   isolates would just thrash.
+  "Race every mode in `auto-mode-pool` in parallel isolates (via Flutter's
+   compute()) and pick the highest-saved result among runs that still have
+   meaningful content (out_mean ≤ 0.97). Parallel is safe here because
+   each mode runs in its own short-lived isolate — they share no CPU
+   with the UI thread.
 
    The 0.97 cutoff filters out 'text mode on a smooth photo' degenerate
    cases — those save the most toner trivially (by going all-white), but
@@ -92,36 +94,37 @@
   [state input-path]
   (let [base-cfg (:config @state)
         modes    st/auto-mode-pool
-        ^async/Future fut
-        (async/Future.microtask
-          (fn []
-            (let [results
-                  (mapv (fn [m]
-                          (let [out (output-path-for input-path)]
-                            (try
-                              (let [r (engine/convert! input-path out
-                                                       (assoc base-cfg :mode m))]
-                                (assoc r :mode m :out out))
-                              (catch Object _ nil))))
-                        modes)
-                  ok          (filter some? results)
-                  meaningful  (filter #(< (:out-mean %) 0.97) ok)
-                  candidates  (if (seq meaningful) meaningful ok)]
-              (when (seq candidates)
-                (apply max-key :saved candidates)))))]
-    (.then fut
-           (fn [winner]
-             (if winner
-               (swap! state assoc
-                      :converting? false
-                      :output-path (:out winner)
-                      :toner-saved (* 100.0 (:saved winner))
-                      :auto-chosen-mode (:mode winner)
-                      :status (str "Done · auto chose " (:mode winner)))
-               (swap! state assoc
-                      :converting? false
-                      :error "All auto modes failed."
-                      :status "Conversion failed."))))))
+        ;; Kick off all isolate runs up front.
+        per-mode (mapv (fn [m]
+                         (let [out (output-path-for input-path)]
+                           (-> (found/compute engine/convert-iso
+                                              {:in input-path :out out
+                                               :config (assoc base-cfg :mode m)})
+                               (.then (fn [r]
+                                        (if (:error r)
+                                          nil
+                                          (assoc r :mode m :out out))))
+                               (.catchError (fn [_e _st] nil)))))
+                       modes)
+        ^async/Future all (.wait async/Future per-mode)]
+    (.then all
+           (fn [results]
+             (let [ok          (filter some? results)
+                   meaningful  (filter #(< (:out-mean %) 0.97) ok)
+                   candidates  (if (seq meaningful) meaningful ok)
+                   winner      (when (seq candidates)
+                                 (apply max-key :saved candidates))]
+               (if winner
+                 (swap! state assoc
+                        :converting? false
+                        :output-path (:out winner)
+                        :toner-saved (* 100.0 (:saved winner))
+                        :auto-chosen-mode (:mode winner)
+                        :status (str "Done · auto chose " (:mode winner)))
+                 (swap! state assoc
+                        :converting? false
+                        :error "All auto modes failed."
+                        :status "Conversion failed.")))))))
 
 (defn- run-convert!
   "Top-level dispatch. Auto fans out across the mobile mode pool; anything
