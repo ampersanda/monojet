@@ -91,9 +91,16 @@
                                                  .color f95.Flutter95/background)))])))))))
 
 (defn slider-field
-  "Labeled integer slider with the current value displayed inline. `default-v`
-   (or nil) renders a small tick on the track at that value as a hint."
-  [label ^int value ^int mn ^int mx default-v on-change]
+  "Labeled integer slider with the current value displayed inline.
+
+   Required: `label`.
+   Kwargs:
+     :value      — current value (int).
+     :min :max   — slider bounds (int).
+     :default    — recommended starting value (int or nil); renders a small
+                   tick on the track as a hint.
+     :on-change  — `(fn [int] ...)` called with the new value."
+  [label & {:keys [^int value ^int min ^int max default on-change]}]
   (m/Column
     .crossAxisAlignment m.CrossAxisAlignment/stretch
     .children
@@ -104,7 +111,7 @@
                 .children
                 [(m/Text label .style f95.Flutter95/textStyle)
                  (m/Text (str value) .style f95.Flutter95/textStyle)]))
-     (win95-slider value mn mx default-v on-change)]))
+     (win95-slider value min max default on-change)]))
 
 (defn text-field
   "Labeled TextField95. `on-change` receives the raw String on submit."
@@ -128,8 +135,13 @@
   "Win95-styled dropdown wrapped in a Material context (Material's DropdownButton
    requires a Material ancestor and Flutter95.Scaffold95 does not provide one).
    Sized to match TextField95's 32 px height so the form fields line up.
-   `options` is a seq of {:value v :label l}."
-  [label value options on-change]
+
+   Required: `label`.
+   Kwargs:
+     :value     — currently-selected option's :value.
+     :options   — seq of {:value v :label l} maps.
+     :on-change — `(fn [v] ...)` called with the new option's value."
+  [label & {:keys [value options on-change]}]
   (labeled-field label
     (f95/Elevation95
       .type f95.Elevation95Type/down

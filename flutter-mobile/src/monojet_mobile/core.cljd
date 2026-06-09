@@ -340,10 +340,11 @@
 ;; --- Config panel (shared between sidebar + bottom sheet) ------------------
 
 (defn- mode-popup [value on-change]
-  (form/enum-popup "Mode" value st/modes on-change))
+  (form/enum-popup "Mode" :value value :options st/modes :on-change on-change))
 
 (defn- toner-popup [value on-change]
-  (form/enum-popup "Toner saving" value st/toner-saving-options on-change))
+  (form/enum-popup "Toner saving"
+                   :value value :options st/toner-saving-options :on-change on-change))
 
 (def ^:private field-gap (m/SizedBox .height 10.0))
 
@@ -446,14 +447,17 @@
               field-gap
               (toner-popup (:toner-saving config) #(update-cfg! :toner-saving %))
               field-gap
-              (form/slider-field "Threshold" (:threshold config) 0 100 50
-                                 #(update-cfg! :threshold %))
+              (form/slider-field "Threshold"
+                                 :value (:threshold config) :min 0 :max 100 :default 50
+                                 :on-change #(update-cfg! :threshold %))
               field-gap
-              (form/slider-field "Brightness" (:brightness config) -100 100 0
-                                 #(update-cfg! :brightness %))
+              (form/slider-field "Brightness"
+                                 :value (:brightness config) :min -100 :max 100 :default 0
+                                 :on-change #(update-cfg! :brightness %))
               field-gap
-              (form/slider-field "Contrast" (:contrast config) -100 100 0
-                                 #(update-cfg! :contrast %))
+              (form/slider-field "Contrast"
+                                 :value (:contrast config) :min -100 :max 100 :default 0
+                                 :on-change #(update-cfg! :contrast %))
               field-gap
               (form/checkbox-row "auto-invert" (:auto-invert? config)
                                  #(update-cfg! :auto-invert? (boolean %)))
@@ -570,12 +574,16 @@
       .children
       [(m/Column
          .children
-         [(preview/preview-tile "Original"  (:input-path s)  #(open-image! ctx state))
-          (preview/preview-tile "Converted" (:output-path s) nil
-                                (stat/big-number (:toner-saved s) "%" "toner saved"
-                                                 (when-let [am (:auto-chosen-mode s)]
-                                                   (str "auto · " am)))
-                                (:converting? s))
+         [(preview/preview-tile "Original"  (:input-path s)
+                                :on-tap #(open-image! ctx state))
+          (preview/preview-tile "Converted" (:output-path s)
+                                :loading? (:converting? s)
+                                :overlay (stat/big-number
+                                           :value (:toner-saved s)
+                                           :suffix "%"
+                                           :caption "toner saved"
+                                           :sub-caption (when-let [am (:auto-chosen-mode s)]
+                                                          (str "auto · " am))))
           (m/ColoredBox
             .color f95.Flutter95/background
             .child (m/Padding
@@ -658,9 +666,10 @@
                             .children
                             [(m/Row
                                .children
-                               [(preview/preview-tile "Original"  (:input-path s)  #(open-image! ctx state))
-                                (preview/preview-tile "Converted" (:output-path s) nil
-                                                      nil (:converting? s))])
+                               [(preview/preview-tile "Original"  (:input-path s)
+                                                      :on-tap #(open-image! ctx state))
+                                (preview/preview-tile "Converted" (:output-path s)
+                                                      :loading? (:converting? s))])
                              (m/Positioned
                                .top 16.0
                                .right 16.0
@@ -671,9 +680,12 @@
                                         [(btn/chevron-toggle config-open?
                                                              #(swap! *config-open not))
                                          (m/SizedBox .height 10.0)
-                                         (stat/big-number (:toner-saved s) "%" "toner saved"
-                                                          (when-let [am (:auto-chosen-mode s)]
-                                                            (str "auto · " am)))]))]))
+                                         (stat/big-number
+                                           :value (:toner-saved s)
+                                           :suffix "%"
+                                           :caption "toner saved"
+                                           :sub-caption (when-let [am (:auto-chosen-mode s)]
+                                                          (str "auto · " am)))]))]))
                  (m/AnimatedContainer
                    .duration (Duration .milliseconds 200)
                    .curve m.Curves/easeInOut
@@ -722,9 +734,10 @@
                 [(m/Row
                    .crossAxisAlignment m.CrossAxisAlignment/stretch
                    .children
-                   [(preview/preview-tile "Original"  (:input-path s)  #(open-image! ctx state))
-                    (preview/preview-tile "Converted" (:output-path s) nil
-                                          nil (:converting? s))])
+                   [(preview/preview-tile "Original"  (:input-path s)
+                                          :on-tap #(open-image! ctx state))
+                    (preview/preview-tile "Converted" (:output-path s)
+                                          :loading? (:converting? s))])
                  (m/Positioned
                    .top 16.0
                    .right 16.0
@@ -735,9 +748,12 @@
                             [(btn/vert-toggle config-open?
                                               #(swap! *config-open not))
                              (m/SizedBox .height 10.0)
-                             (stat/big-number (:toner-saved s) "%" "toner saved"
-                                              (when-let [am (:auto-chosen-mode s)]
-                                                (str "auto · " am)))]))]))
+                             (stat/big-number
+                               :value (:toner-saved s)
+                               :suffix "%"
+                               :caption "toner saved"
+                               :sub-caption (when-let [am (:auto-chosen-mode s)]
+                                              (str "auto · " am)))]))]))
             (ipad-bottom-bar s state)])
          (render-modal s state)])))))
 

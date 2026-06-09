@@ -369,10 +369,11 @@
 ;; --- UI: config panel -------------------------------------------------------
 
 (defn- mode-popup [value on-change]
-  (form/enum-popup "Mode" value st/modes on-change))
+  (form/enum-popup "Mode" :value value :options st/modes :on-change on-change))
 
 (defn- toner-popup [value on-change]
-  (form/enum-popup "Toner saving" value st/toner-saving-options on-change))
+  (form/enum-popup "Toner saving"
+                   :value value :options st/toner-saving-options :on-change on-change))
 
 (def ^:private field-gap (m/SizedBox .height 10.0))
 
@@ -429,20 +430,24 @@
                field-gap
                (toner-popup (:toner-saving config) #(update-cfg! :toner-saving %))
                field-gap
-               (form/slider-field "Threshold" (:threshold config) 0 100 50
-                                  #(update-cfg! :threshold %))
+               (form/slider-field "Threshold"
+                                  :value (:threshold config) :min 0 :max 100 :default 50
+                                  :on-change #(update-cfg! :threshold %))
                field-gap
-               (form/slider-field "Brightness" (:brightness config) -100 100 0
-                                  #(update-cfg! :brightness %))
+               (form/slider-field "Brightness"
+                                  :value (:brightness config) :min -100 :max 100 :default 0
+                                  :on-change #(update-cfg! :brightness %))
                field-gap
-               (form/slider-field "Contrast" (:contrast config) -100 100 0
-                                  #(update-cfg! :contrast %))
+               (form/slider-field "Contrast"
+                                  :value (:contrast config) :min -100 :max 100 :default 0
+                                  :on-change #(update-cfg! :contrast %))
                field-gap
                (if pdf?
                  (m/Padding
                    .padding (m.EdgeInsets/only .bottom 10.0)
-                   .child (form/slider-field "PDF DPI" (:density config) 30 600 150
-                                             #(update-cfg! :density %)))
+                   .child (form/slider-field "PDF DPI"
+                                             :value (:density config) :min 30 :max 600 :default 150
+                                             :on-change #(update-cfg! :density %)))
                  (m.SizedBox/shrink))
                (form/checkbox-row "auto-invert" (:auto-invert? config)
                              #(update-cfg! :auto-invert? (boolean %)))
@@ -628,9 +633,10 @@
                               .children
                               [(m/Row
                                  .children
-                                 [(preview/preview-tile "Original" (:input-path s) #(pick-file! state))
-                                  (preview/preview-tile "Converted" (:output-path s) nil
-                                                        nil (:converting? s))])
+                                 [(preview/preview-tile "Original" (:input-path s)
+                                                        :on-tap #(pick-file! state))
+                                  (preview/preview-tile "Converted" (:output-path s)
+                                                        :loading? (:converting? s))])
                                (m/Positioned
                                  .top 16.0
                                  .right 16.0
@@ -641,9 +647,12 @@
                                           [(btn/chevron-toggle config-open?
                                                                #(swap! *config-open not))
                                            (m/SizedBox .height 10.0)
-                                           (stat/big-number (:toner-saved s) "%" "toner saved"
-                                                         (when-let [m (:auto-chosen-mode s)]
-                                                           (str "auto · " m)))]))]))
+                                           (stat/big-number
+                                             :value (:toner-saved s)
+                                             :suffix "%"
+                                             :caption "toner saved"
+                                             :sub-caption (when-let [m (:auto-chosen-mode s)]
+                                                            (str "auto · " m)))]))]))
                    (m/AnimatedContainer
                      .duration (Duration .milliseconds 200)
                      .curve m.Curves/easeInOut

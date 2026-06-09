@@ -7,8 +7,14 @@
   "A bordered card showing a large bold number, a small '%' (or other suffix),
    a caption, and an optional smaller sub-caption (e.g. \"auto · dither\").
    Returns `SizedBox.shrink` when `value` is nil so it stays a valid Widget for
-   slots like `Positioned.child`."
-  [value suffix caption sub-caption]
+   slots like `Positioned.child`.
+
+   Kwargs:
+     :value       — the big number (nilable; nil renders SizedBox.shrink).
+     :suffix      — small text after the number, e.g. \"%\".
+     :caption     — small label under the number.
+     :sub-caption — optional fainter line under the caption."
+  [& {:keys [value suffix caption sub-caption]}]
   (if-not value
     (m.SizedBox/shrink)
     (m/Material
