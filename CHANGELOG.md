@@ -19,6 +19,17 @@
 
 - Renamed `flutter/` → `flutter-desktop/` to make room for the sibling mobile target. The Xcode "Bundle monojet runtime" build phase reaches the repo root via `${SRCROOT}/../..`, so the rename doesn't disturb it.
 
+## Desktop [1.2.0]
+
+### Added
+
+- Win95-style chunky marquee progress bar in the Converted preview tile while a conversion is running.
+
+### Changed
+
+- Form/preview/modal/buttons/stat widgets extracted into a sibling `flutter-shared/` cljd package, consumed via `:local/root`. No functional change — just enables reuse with the upcoming mobile app.
+- `Container` instances that only set `.color` swapped to `ColoredBox` (cheaper, single-purpose).
+
 ## Desktop [1.1.1]
 
 ### Changed
