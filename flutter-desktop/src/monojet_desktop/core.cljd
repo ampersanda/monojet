@@ -629,7 +629,8 @@
                               [(m/Row
                                  .children
                                  [(preview/preview-tile "Original" (:input-path s) #(pick-file! state))
-                                  (preview/preview-tile "Converted" (:output-path s) nil)])
+                                  (preview/preview-tile "Converted" (:output-path s) nil
+                                                        nil (:converting? s))])
                                (m/Positioned
                                  .top 16.0
                                  .right 16.0
