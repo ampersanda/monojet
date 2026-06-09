@@ -1,6 +1,10 @@
 # Changelog
 
-## Mobile [0.1.0] - unreleased
+## Mobile [1.2.0] - unreleased
+
+Version tracks the desktop release so a single tag pins both apps.
+
+
 
 ### Added
 
