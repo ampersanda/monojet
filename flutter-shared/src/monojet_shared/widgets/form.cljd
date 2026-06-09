@@ -132,9 +132,10 @@
 (def ^:private input-height 32.0)
 
 (defn enum-popup
-  "Win95-styled dropdown wrapped in a Material context (Material's DropdownButton
-   requires a Material ancestor and Flutter95.Scaffold95 does not provide one).
-   Sized to match TextField95's 32 px height so the form fields line up.
+  "Win95-styled dropdown. The TRIGGER is a `TextField95`-shaped row
+   (Elevation95 down + chevron); the POPUP is a flat white rectangle
+   with a 1 px black border (`PopupMenuButton` re-themed to drop the
+   Material rounded corners + drop shadow).
 
    Required: `label`.
    Kwargs:
@@ -142,23 +143,49 @@
      :options   — seq of {:value v :label l} maps.
      :on-change — `(fn [v] ...)` called with the new option's value."
   [label & {:keys [value options on-change]}]
-  (labeled-field label
-    (f95/Elevation95
-      .type f95.Elevation95Type/down
-      .child (m/Material
-               .type m.MaterialType/transparency
-               .child (m/Container
-                        .color f95.Flutter95/white
-                        .height input-height
-                        .padding (m.EdgeInsets/symmetric .horizontal 8.0)
-                        .child (m/DropdownButtonHideUnderline
-                                 .child (m/DropdownButton
-                                          .value value
-                                          .isExpanded true
-                                          .style f95.Flutter95/textStyle
-                                          .items (vec (map (fn [opt]
-                                                             (m/DropdownMenuItem
-                                                               .value (:value opt)
-                                                               .child (m/Text (:label opt))))
-                                                           options))
-                                          .onChanged on-change)))))))
+  (let [selected-label (some (fn [opt] (when (= (:value opt) value) (:label opt))) options)]
+    (labeled-field label
+      (m/Material
+        .type m.MaterialType/transparency
+        .child (m/PopupMenuButton
+                 .initialValue value
+                 .onSelected on-change
+                 .tooltip ""
+                 .padding (m.EdgeInsets/all 0.0)
+                 .position m.PopupMenuPosition/under
+                 .color f95.Flutter95/white
+                 .surfaceTintColor f95.Flutter95/white
+                 .elevation 4.0
+                 .shape (m/RoundedRectangleBorder
+                          .borderRadius m.BorderRadius/zero
+                          .side (m/BorderSide. .color f95.Flutter95/black .width 1.0))
+                 .itemBuilder (fn [^m/BuildContext _]
+                                ;; PopupMenuButton wants List<PopupMenuEntry<dynamic>>;
+                                ;; a Clojure vec types as PersistentVector<dynamic> and
+                                ;; Dart rejects the assignment. Build a typed growable
+                                ;; Dart list and .add into it instead.
+                                (let [items #dart ^m/PopupMenuEntry []]
+                                  (doseq [opt options]
+                                    (.add items
+                                          (m/PopupMenuItem
+                                            .value (:value opt)
+                                            .child (m/Text (:label opt)
+                                                           .style f95.Flutter95/textStyle))))
+                                  items))
+                 .child (f95/Elevation95
+                          .type f95.Elevation95Type/down
+                          .child (m/ColoredBox
+                                   .color f95.Flutter95/white
+                                   .child (m/SizedBox
+                                            .height input-height
+                                            .child (m/Padding
+                                                     .padding (m.EdgeInsets/symmetric .horizontal 8.0)
+                                                     .child (m/Row
+                                                              .mainAxisAlignment m.MainAxisAlignment/spaceBetween
+                                                              .crossAxisAlignment m.CrossAxisAlignment/center
+                                                              .children
+                                                              [(m/Text (or selected-label "")
+                                                                       .style f95.Flutter95/textStyle)
+                                                               (m/Icon m.Icons/arrow_drop_down
+                                                                       .size 18.0
+                                                                       .color f95.Flutter95/black)]))))))))))
