@@ -21,23 +21,37 @@
   ([label path loading?]
    (cond
      loading?
-     ;; Win95-style indeterminate progress bar: Elevation95-down inset
-     ;; track with a navy LinearProgressIndicator filling. Material's
-     ;; circular spinner is iOS/Android-y and clashes with the rest of
-     ;; the flutter95 chrome.
+     ;; Win95-style indeterminate progress bar: an Elevation95-down inset
+     ;; track holds a navy LinearProgressIndicator (smooth fill) with a
+     ;; row of background-colored 2 px gap stripes overlaid on top — the
+     ;; gaps mask the smooth fill into the chunky discrete blocks Win95
+     ;; was famous for, without needing a custom AnimationController.
      (m/Center
        .child (m/Column
                 .mainAxisSize m.MainAxisSize/min
                 .children
                 [(m/SizedBox
                    .width 180.0
-                   .height 16.0
+                   .height 18.0
                    .child (f95/Elevation95
                             .type f95.Elevation95Type/down
-                            .child (m/LinearProgressIndicator
-                                     .backgroundColor f95.Flutter95/background
-                                     .color f95.Flutter95/primary
-                                     .minHeight 14.0)))
+                            .child (m/Stack
+                                     .fit m.StackFit/expand
+                                     .children
+                                     [(m/LinearProgressIndicator
+                                        .backgroundColor f95.Flutter95/background
+                                        .color f95.Flutter95/primary
+                                        .minHeight 16.0)
+                                      (m/Row
+                                        .children
+                                        (vec
+                                          (mapcat
+                                            (fn [_]
+                                              [(m/Expanded .child (m.SizedBox/shrink))
+                                               (m/Container
+                                                 .width 2.0
+                                                 .color f95.Flutter95/background)])
+                                            (range 14))))])))
                  (m/SizedBox .height 10.0)
                  (m/Text "Converting…" .style f95.Flutter95/textStyle)]))
 
