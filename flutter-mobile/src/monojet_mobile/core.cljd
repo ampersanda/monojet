@@ -574,7 +574,8 @@
           (preview/preview-tile "Converted" (:output-path s) nil
                                 (stat/big-number (:toner-saved s) "%" "toner saved"
                                                  (when-let [am (:auto-chosen-mode s)]
-                                                   (str "auto · " am))))
+                                                   (str "auto · " am)))
+                                (:converting? s))
           (m/ColoredBox
             .color f95.Flutter95/background
             .child (m/Padding
@@ -658,7 +659,8 @@
                             [(m/Row
                                .children
                                [(preview/preview-tile "Original"  (:input-path s)  #(open-image! ctx state))
-                                (preview/preview-tile "Converted" (:output-path s) nil)])
+                                (preview/preview-tile "Converted" (:output-path s) nil
+                                                      nil (:converting? s))])
                              (m/Positioned
                                .top 16.0
                                .right 16.0
@@ -721,7 +723,8 @@
                    .crossAxisAlignment m.CrossAxisAlignment/stretch
                    .children
                    [(preview/preview-tile "Original"  (:input-path s)  #(open-image! ctx state))
-                    (preview/preview-tile "Converted" (:output-path s) nil)])
+                    (preview/preview-tile "Converted" (:output-path s) nil
+                                          nil (:converting? s))])
                  (m/Positioned
                    .top 16.0
                    .right 16.0

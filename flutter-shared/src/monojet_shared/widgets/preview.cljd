@@ -14,20 +14,46 @@
 
 (defn image-or-placeholder
   "If `path` points to a non-PDF image on disk, render `Image.file`. Otherwise
-   render a centered caption derived from `placeholder-text`."
-  [label path]
-  (if (and path
-           (not (-> path p/extension .toLowerCase (= ".pdf"))))
-    (m/Image.file (io/File. path)
-                  .fit m.BoxFit/contain
-                  .key (m/ValueKey. path)
-                  .semanticLabel (str label " preview"))
-    (m/Center
-      .child (m/Padding
-               .padding (m.EdgeInsets/all 16.0)
-               .child (m/Text (placeholder-text path)
-                              .textAlign m.TextAlign/center
-                              .style f95.Flutter95/disabledTextStyle)))))
+   render a centered caption derived from `placeholder-text`. When
+   `loading?` is true, render a spinner + 'Converting…' label and ignore
+   `path` entirely."
+  ([label path] (image-or-placeholder label path false))
+  ([label path loading?]
+   (cond
+     loading?
+     ;; Win95-style indeterminate progress bar: Elevation95-down inset
+     ;; track with a navy LinearProgressIndicator filling. Material's
+     ;; circular spinner is iOS/Android-y and clashes with the rest of
+     ;; the flutter95 chrome.
+     (m/Center
+       .child (m/Column
+                .mainAxisSize m.MainAxisSize/min
+                .children
+                [(m/SizedBox
+                   .width 180.0
+                   .height 16.0
+                   .child (f95/Elevation95
+                            .type f95.Elevation95Type/down
+                            .child (m/LinearProgressIndicator
+                                     .backgroundColor f95.Flutter95/background
+                                     .color f95.Flutter95/primary
+                                     .minHeight 14.0)))
+                 (m/SizedBox .height 10.0)
+                 (m/Text "Converting…" .style f95.Flutter95/textStyle)]))
+
+     (and path (not (-> path p/extension .toLowerCase (= ".pdf"))))
+     (m/Image.file (io/File. path)
+                   .fit m.BoxFit/contain
+                   .key (m/ValueKey. path)
+                   .semanticLabel (str label " preview"))
+
+     :else
+     (m/Center
+       .child (m/Padding
+                .padding (m.EdgeInsets/all 16.0)
+                .child (m/Text (placeholder-text path)
+                               .textAlign m.TextAlign/center
+                               .style f95.Flutter95/disabledTextStyle))))))
 
 (defn preview-tile
   "A captioned, inset (Elevation95 down) tile that displays an image at `path`.
@@ -36,8 +62,10 @@
    the image area — used e.g. to anchor the toner-saved stat over the
    Converted preview."
   ([label path on-tap]
-   (preview-tile label path on-tap nil))
+   (preview-tile label path on-tap nil false))
   ([label path on-tap overlay]
+   (preview-tile label path on-tap overlay false))
+  ([label path on-tap overlay loading?]
    (m/Expanded
      .child (m/Padding
               .padding (m.EdgeInsets/all 12.0)
@@ -68,7 +96,7 @@
                                                         .type f95.Elevation95Type/down
                                                         .child (m/ColoredBox
                                                                  .color f95.Flutter95/white
-                                                                 .child (image-or-placeholder label path)))))
+                                                                 .child (image-or-placeholder label path loading?)))))
                                     (if overlay
                                       (m/Positioned .top 8.0 .right 8.0 .child overlay)
                                       (m.SizedBox/shrink))]))])))))
