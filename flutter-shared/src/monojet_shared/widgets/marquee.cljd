@@ -1,0 +1,65 @@
+(ns monojet-shared.widgets.marquee
+  "Classic Win95 indeterminate progress bar — fixed-width navy blocks
+   marching at constant speed inside an Elevation95-down track. Used as
+   a busy indicator for long-running work (image conversion, etc.)."
+  (:require ["package:flutter/material.dart" :as m]
+            ["package:flutter95/flutter95.dart" :as f95]
+            [cljd.flutter :as f]))
+
+(def ^:private block-width   10.0)
+(def ^:private block-gap     2.0)
+(def ^:private block-count   12)
+(def ^:private lit-window    4)
+(def ^:private cycle-ms      1200)
+(def ^:private track-padding 1.0)
+
+(defn- blocks
+  "Row of fixed-width blocks. `t` ∈ [0,1] picks which blocks are lit:
+   a window of `lit-window` lit blocks slides from -lit-window to
+   block-count so it walks fully off-screen on both sides."
+  [^double t]
+  (let [start (- (* t (+ block-count lit-window)) lit-window)
+        end   (+ start lit-window)
+        rows  (mapcat
+                (fn [i]
+                  (let [lit? (and (>= i start) (< i end))
+                        block (m/Container
+                                .width block-width
+                                .color (if lit?
+                                         f95.Flutter95/primary
+                                         f95.Flutter95/background))]
+                    (if (< i (dec block-count))
+                      [block (m/SizedBox .width block-gap)]
+                      [block])))
+                (range block-count))]
+    (m/Row
+      .mainAxisAlignment m.MainAxisAlignment/center
+      .mainAxisSize m.MainAxisSize/min
+      .children (vec rows))))
+
+(defn marquee
+  "Standalone Win95 marquee progress bar. Linear animation, fixed-width
+   blocks. Loops by bumping a local round-counter atom in `onEnd`."
+  []
+  (f/widget
+    :managed [*round (atom 0) :dispose nil :refresh-on :never]
+    :watch [round *round]
+    (let [w (+ (* block-count block-width)
+               (* (dec block-count) block-gap)
+               (* 2.0 track-padding)
+               6.0)]
+      (m/SizedBox
+        .width w
+        .height 18.0
+        .child (f95/Elevation95
+                 .type f95.Elevation95Type/down
+                 .child (m/Padding
+                          .padding (m.EdgeInsets/all track-padding)
+                          .child (m/TweenAnimationBuilder
+                                   .key (m/ValueKey. round)
+                                   .duration (Duration .milliseconds cycle-ms)
+                                   .curve m.Curves/linear
+                                   .tween (m/Tween. .begin 0.0 .end 1.0)
+                                   .onEnd (fn [] (swap! *round inc))
+                                   .builder (fn [^m/BuildContext _ t _]
+                                              (blocks t)))))))))
